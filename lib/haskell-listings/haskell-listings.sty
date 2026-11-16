@@ -1,0 +1,661 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{haskell-listings}[2022/07/24 Florian Sihler - Highlighting Haskell Code]
+
+\RequirePackage{etoolbox}
+\RequirePackage{xcolor}
+
+\RequirePackage{accsupp}
+\RequirePackage{listingsutf8}
+\RequirePackage{lstautogobble}
+% ligatures will be set up with literates
+
+
+
+% some font management
+\def\T{\texttt}
+\AtEndPreamble{\let\hs@ttfamily\ttfamily}
+
+% we want to control the size:
+\def\hs@font@fs@numbers{\footnotesize}
+\def\solNumFs#1{\gdef\hs@font@fs@numbers{#1}}
+\def\hs@font@fs@normal{}
+\def\hs@font@size{\dimexpr\f@size\p@\relax}
+
+% TODO: within inline guards
+
+% \hs@font@size
+\newcommand*\lstfs[1][1]{\@ifstar{\@lstfs{#1}{\hs@font@size}}{\@lstfs{#1}}}
+\def\@lstfs#1#2{%
+  \def\hs@font@fs@normal{\fontsize{#2}{#2}\linespread{#1}\selectfont}%
+  \ifnum#2>7\edef\hs@lst@@subfs{\the\numexpr #2-4}\def\hs@font@fs@numbers{\fontsize\hs@lst@@subfs\hs@lst@@subfs\linespread{#1}\selectfont}%
+  \else\def\hs@font@fs@numbers{\tiny\linespread{#1}}\fi
+}
+
+% the basic listing package does not allow to append literates
+% we add this feature:
+\def\hl@lst@addToLiterate#1{\protected@edef\lst@literate{\unexpanded\expandafter{\lst@literate}\unexpanded{#1}}}
+\lst@Key{add to literate}{}{\hl@lst@addToLiterate{#1}}
+% just disable in delims:
+
+% ligatures
+% \RequirePackage{lstfiracode}
+% \lstset{style=FiraCodeStyle}
+% we have to do them manually. Why? because some ligatures, e.g. '--' interfere
+% with haskell-highlighting!
+
+% no we create a basic table of literates which will allow us
+% to control basic replacements, number highlighting and more.
+% furthermore, we can do emoji/arbitrary unicode placement.
+
+% The basic literate table
+\def\HsSetLiterateTable{%
+  \lstset{basewidth=0.6em,add to literate=%
+  % i do not think, that we need them
+  % {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1 {à}{{\`a}}1 {è}{{\`e}}1 {ì}{{\`i}}1
+  % {ò}{{\`o}}1 {ù}{{\`u}}1 {À}{{\`A}}1 {È}{{\'E}}1 {Ì}{{\`I}}1 {Ò}{{\`O}}1
+  % {Ù}{{\`U}}1 {ë}{{\"e}}1 {ï}{{\"i}}1 {Ë}{{\"E}}1 {Ï}{{\"I}}1
+  {ä}{{\"a}}1 {ö}{{\"o}}1 {ü}{{\"u}}1 {Ä}{{\"A}}1 {Ö}{{\"O}}1 {Ü}{{\"U}}1
+  % {â}{{\^a}}1 {ê}{{\^e}}1 {î}{{\^i}}1 {ô}{{\^o}}1 {û}{{\^u}}1 {æ}{{\ae}}1
+  % {Æ}{{\AE}}1
+  {ø}{{\o}}1 {ß}{{\ss}}1 {€}{{\texteuro}}1 {£}{{\pounds}}1
+  % those can be used as "breakers" in case highlights or replacements fail
+  {:ws:}{{{ }}}1 {:c:}{{{}}}0 {:star:}{{*}}1 {:minus:}{{-}}1  {:ul:}{{\_}}1
+  % generic ones, which i like
+  {:yields:}{{{$\rightarrow$}}}1 {:lan:}{{{$\langle$\thinspace}}}1
+  {:ran:}{{{\thinspace$\rangle$}}}1 {:to:}{{{$\to$}}}2 {:equiv:}{{{$\equiv$}}}1
+  {:~>:}{{{$\rightsquigarrow$}}}1
+  % numbeeeeers!
+  {0}{{\hs@dgt{0}}}1
+  {1}{{\hs@dgt{1}}}1 {2}{{\hs@dgt{2}}}1 {3}{{\hs@dgt{3}}}1
+  {4}{{\hs@dgt{4}}}1 {5}{{\hs@dgt{5}}}1 {6}{{\hs@dgt{6}}}1
+  {7}{{\hs@dgt{7}}}1 {8}{{\hs@dgt{8}}}1 {9}{{\hs@dgt{9}}}1
+  {0e}{{\hs@dgt{0e}}}2
+  {1e}{{\hs@dgt{1e}}}2 {2e}{{\hs@dgt{2e}}}2 {3e}{{\hs@dgt{3e}}}2
+  {4e}{{\hs@dgt{4e}}}2 {5e}{{\hs@dgt{5e}}}2 {6e}{{\hs@dgt{6e}}}2
+  {7e}{{\hs@dgt{7e}}}2 {8e}{{\hs@dgt{8e}}}2 {9e}{{\hs@dgt{9e}}}2
+  {.0}{{\hs@dgt{.0}}}2
+  {.1}{{\hs@dgt{.1}}}2 {.2}{{\hs@dgt{.2}}}2 {.3}{{\hs@dgt{.3}}}2
+  {.4}{{\hs@dgt{.4}}}2 {.5}{{\hs@dgt{.5}}}2 {.6}{{\hs@dgt{.6}}}2
+  {.7}{{\hs@dgt{.7}}}2 {.8}{{\hs@dgt{.8}}}2 {.9}{{\hs@dgt{.9}}}2
+  % prefixes
+  {0x}{{\hsGetStyle{nummodifier}0x}}2 {0X}{{\hsGetStyle{nummodifier}0X}}2
+  {0b}{{\hsGetStyle{nummodifier}0b}}2 {0B}{{\hsGetStyle{nummodifier}0B}}2
+  {0o}{{\hsGetStyle{nummodifier}0o}}2 {0O}{{\hsGetStyle{nummodifier}0O}}2
+  % ligatures
+  {->}{{\toLig}}2 {=>}{{\ToLig}}2 {::}{{\colLig}}2 {/=}{{\neqLig}}2%
+  {\&\&}{{\andLig}}2 {||}{{\orLig}}2 {<-}{{\otLig}}2 {<$}{{\lfuncLig}}2 {<$>}{{\funcLig}}3%
+  {<*>}{{\starLig}}3{<=}{{\leqLig}}2 {>=}{{\geqLig}}2 {>>=}{{\theLig}}3 {>=>}{{\kleisliLig}}3%
+  {|>}{{\commLig}}2 {||>}{{\dcommLig}}3
+  {..}{{\dotInvLig}}2 {...}{{\tredotInvLig}}3 {~}{\textasciitilde}1  {==}{{=\kern.1pt=}}2%
+  {<|>}{{\altLig}}3 {==>}{{\implLig}}3 {++}{{\ppLig}}2 {+++}{{\pppLig}}3% { }{{\spaceLig}}1%
+}}
+
+% copy fix ligatures:
+\protected\def\commLig{\HaskellPrompt{\BeginAccSupp{ActualText={|>}}|>\EndAccSupp{}}}
+\protected\def\dcommLig{\HaskellPrompt{\BeginAccSupp{ActualText={||>}}|\kern-3.5pt|>\EndAccSupp{}}}
+\protected\def\funcLig{\HaskellPrompt{\BeginAccSupp{ActualText={<$>}}<\$>\EndAccSupp{}}}
+\protected\def\lfuncLig{\HaskellPrompt{\BeginAccSupp{ActualText={<$}}<\$\EndAccSupp{}}}
+\protected\def\starLig{\HaskellPrompt{\BeginAccSupp{ActualText={<*>}}<*>\EndAccSupp{}}}
+\protected\def\implLig{\HaskellPrompt{\BeginAccSupp{ActualText={={}={}>}}==>\EndAccSupp{}}} % \(\implies\)
+\protected\def\theLig{\BeginAccSupp{ActualText={>>=}}>>=\EndAccSupp{}}
+\protected\def\ppLig{\BeginAccSupp{ActualText={++}}++\EndAccSupp{}}
+\protected\def\pppLig{\BeginAccSupp{ActualText={+++}}+++\EndAccSupp{}}
+% \protected\def\spaceLig{\BeginAccSupp{ActualText={ }} \EndAccSupp{}}
+\protected\def\kleisliLig{\BeginAccSupp{ActualText={>{}={}>}}>=>\EndAccSupp{}}
+\protected\def\toLig{\BeginAccSupp{ActualText={->}}->\EndAccSupp{}}
+\protected\def\leqLig{\BeginAccSupp{ActualText={<=}}<=\EndAccSupp{}}
+\protected\def\geqLig{\BeginAccSupp{ActualText={>=}}>=\EndAccSupp{}}
+\protected\def\otLig{\BeginAccSupp{ActualText={<-}}<-\EndAccSupp{}}
+\protected\def\ToLig{\BeginAccSupp{ActualText={=>}}=>\EndAccSupp{}}
+\protected\def\colLig{\BeginAccSupp{ActualText={::}}::\EndAccSupp{}}
+\protected\def\neqLig{\BeginAccSupp{ActualText={/=}}/=\EndAccSupp{}}
+\protected\def\andLig{\BeginAccSupp{ActualText={&&}}\&\&\EndAccSupp{}}
+\protected\def\orLig{\BeginAccSupp{ActualText={||}}||\EndAccSupp{}}
+\protected\def\altLig{\BeginAccSupp{ActualText={<{}|{}>}}\HaskellPrompt{<\kern-1pt|\kern-1pt>}\EndAccSupp{}} % forcefully break the lig
+\protected\def\dotInvLig{\BeginAccSupp{ActualText={..}}..\EndAccSupp{}}
+\protected\def\tredotInvLig{\BeginAccSupp{ActualText={...}}...\EndAccSupp{}}
+
+
+% this way we can deal with packages that overwrite literates
+\HsSetLiterateTable
+
+\newif\ifhs@lst@lastwas@character@ % last segment was from char-class
+\newif\ifhs@lst@lastwas@charkeep@  % in char-mode (pass through)
+% we should care about number highlighting:
+\def\hs@@lst@hl@digit#1{\begingroup
+\ifhs@lst@lastwas@character@
+\global\hs@lst@lastwas@charkeep@true#1\else\global\hs@lst@lastwas@charkeep@false
+  \ifnum\lst@mode=\lst@Pmode\relax% PMode: Not in any special Mode
+  {\hs@styles@lst@numbers{#1}}% or if keywords are active:
+  \else\lst@ifkeywords{\hs@styles@lst@numbers{#1}}\else#1\fi\fi
+\fi
+\endgroup}
+\let\hs@dgt\hs@@lst@hl@digit
+\def\hsdisablenumhl{\def\hs@dgt##1{##1}}
+\def\hsenablenumhl{\let\hs@dgt\hs@@lst@hl@digit}
+
+% overwrite processor routines to adapt to number
+\def\lst@ProcessLetter{%
+  \lst@whitespacefalse\hs@lst@lastwas@character@true\lst@AppendLetter}
+\def\lst@ProcessOther{%
+  \lst@whitespacefalse\hs@lst@lastwas@charkeep@false\hs@lst@lastwas@character@false\lst@AppendOther}
+\def\lst@whitespacetrue{\ifhs@lst@lastwas@charkeep@\hs@lst@lastwas@charkeep@false\hs@lst@lastwas@character@false\else\hs@lst@lastwas@character@false\fi\global\let\lst@ifwhitespace\iftrue}
+\def\lst@whitespacefalse{\global\let\lst@ifwhitespace\iffalse}
+
+\def\hs@nc{\ifhs@lst@lastwas@charkeep@\else\hs@lst@lastwas@character@false\fi}
+
+% modify lst-literate routine to apply to the mechanism
+\def\lst@Literate#1#2#3{%
+\ifx\relax#2\@empty\else
+\lst@CArgX #1\relax\lst@CDef\relax
+  {\let\lst@next\@empty
+  \lst@ifxliterate
+  \lst@ifmode\let\lst@next\lst@CArgEmpty\fi
+  \fi\ifx\lst@next\@empty
+    \ifx\lst@OutputBox\@gobble\else
+    \lst@XPrintToken \let\lst@scanmode\lst@scan@m
+    \lst@token{#2}\lst@length#3\relax
+    \lst@XPrintToken
+    \lst@whitespacefalse\hs@nc
+    \fi
+    \let\lst@next\lst@CArgEmptyGobble
+  \fi\lst@next}%
+  \@empty% splitter for constants
+\expandafter\lst@Literate
+\fi
+}
+
+% line numbers consumption
+% If possible we want to make the line numbers unmarkable, so you can copy
+% code without selecting them:
+% locally blacklist some numbers
+\newif\if@hs@lst@blacklist@is@ghost@
+\let\hsblacklistisghost\@hs@lst@blacklist@is@ghost@true
+\let\hsblacklistispresent\@hs@lst@blacklist@is@ghost@false
+\def\hsblacklistlinenumbers{\@ifstar{\hsblacklistispresent\@hs@lst@blacklistlinenumers}{\hsblacklistisghost\@hs@lst@blacklistlinenumers}}
+\def\@hs@lst@blacklistlinenumers#1{\@for\@num:={#1}\do{\expandafter\let\csname hs@lst@nl@blacklist@\@num\endcsname\@empty}}
+% TODO: support for non-integer line markers by not adding stuff if ispresent is true?
+% we have to keep a different offset for blacklisted and ghost line numbers
+% 1. we must keep ranges intact and
+% 2. otherwise the line to be blacklisted would repeat
+\newcount\c@hs@lst@blacklisted@linenum@counter
+\lst@AddToHook{PreInit}{\c@hs@lst@blacklisted@linenum@counter\z@}
+
+\def\hs@lst@num@consume#1{\@ifundefined{hs@lst@nl@blacklist@#1}{\BeginAccSupp{method=escape,ActualText={}}\the\numexpr#1+\c@hs@lst@blacklisted@linenum@counter\EndAccSupp{}}{\if@hs@lst@blacklist@is@ghost@\global\advance\c@hs@lst@blacklisted@linenum@counter\m@ne\fi}}
+
+
+% styling
+\newdimen\hs@length@lst@xleftmargin \hs@length@lst@xleftmargin=3\p@
+\newdimen\hs@length@lst@xrightmargin \hs@length@lst@xrightmargin=3\p@
+\newdimen\hs@length@lst@numsep \hs@length@lst@numsep=9\p@
+
+% colors
+\colorlet{hs@colors@lst@keywordA}{red!70!black}
+\colorlet{hs@colors@lst@keywordB}{red!70!black!75!white}
+\colorlet{hs@colors@lst@keywordC}{red!60!black!90!black}
+\colorlet{hs@colors@lst@keywordD}{uulmaccent!90!black}
+\colorlet{hs@colors@lst@numbers}{blue!70!black!80!teal}
+\colorlet{hs@colors@lst@literals}{uulmaccent!90!brown}
+\colorlet{hs@colors@lst@comments}{lightgray!75!gray}
+\colorlet{hs@colors@lst@nummodifier}{hs@colors@lst@numbers!50!darkgray}
+\colorlet{hs@colors@lst@highlight}{lime}
+\colorlet{hs@colors@lst@command}{hs@colors@lst@keywordB}
+\colorlet{hs@colors@lst@linenumbers}{gray}
+\colorlet{hs@colors@lst@escapes}{hs@colors@lst@literals!72!black}
+
+\def\hs@styles@lst@keywordA{\@declaredcolor{hs@colors@lst@keywordA}}
+\def\hs@styles@lst@keywordB{\@declaredcolor{hs@colors@lst@keywordB}}
+\def\hs@styles@lst@keywordC{\@declaredcolor{hs@colors@lst@keywordC}}
+\def\hs@styles@lst@keywordD{\sffamily\itshape}
+\def\hs@styles@lst@numbers{\@declaredcolor{hs@colors@lst@numbers}\itshape}
+\def\hs@styles@lst@literals{\@declaredcolor{hs@colors@lst@literals}}
+\def\hs@styles@lst@comments{\@declaredcolor{hs@colors@lst@comments}%
+   % disable kw highlighting in replacements
+   \colorlet{hs@colors@lst@keywordA}{hs@colors@lst@comments}%
+   \colorlet{hs@colors@lst@keywordB}{hs@colors@lst@comments}%
+   \colorlet{hs@colors@lst@keywordC}{hs@colors@lst@comments}%
+   \colorlet{hs@colors@lst@keywordD}{hs@colors@lst@comments}%
+}
+\def\hs@styles@lst@nummodifier{\@declaredcolor{hs@colors@lst@nummodifier}}
+\def\hs@styles@lst@basic{\hs@font@fs@normal\hs@ttfamily}
+\def\blacklst{\def\hs@styles@lst@basic{\hs@font@fs@normal\hs@ttfamily\color{black}}}
+\def\hs@styles@lst@command{ \@declaredcolor{hs@colors@lst@command}}
+\def\hs@styles@lst@highlight{\@declaredcolor{hs@colors@lst@highlight}\itshape}
+\def\hs@styles@lst@linenumbers{\@declaredcolor{hs@colors@lst@linenumbers}\hs@font@fs@numbers\sffamily}%
+\def\hsGetStyle#1{\csname hs@styles@lst@#1\endcsname}
+\def\hsComment#1{{\hsGetStyle{comments}#1}}
+\def\hsKw#1{{\hsGetStyle{keywordA}#1}}
+\def\hsNum#1{{\hsGetStyle{numbers}#1}}
+
+\def\codeprebreak{\rlap{\BeginAccSupp{method=escape,ActualText={}}\hs@font@fs@numbers\space\space$\hookleftarrow$\EndAccSupp{}}}
+
+% configure the main style
+\lstdefinestyle{hs@main}{%
+   lineskip     = .33pt, % minor increase in spacing
+   xleftmargin  = \hs@length@lst@xleftmargin,
+   xrightmargin = \hs@length@lst@xrightmargin,
+   % the 'key'-styles:
+   stringstyle  = \hs@styles@lst@basic\hs@styles@lst@literals,
+   commentstyle = \hs@styles@lst@basic\hs@styles@lst@comments,
+   keywordstyle = \hs@styles@lst@basic\hs@styles@lst@keywordA,
+   keywordstyle = [2]{\hs@styles@lst@basic\hs@styles@lst@keywordB},
+   keywordstyle = [3]{\hs@styles@lst@basic\hs@styles@lst@keywordC},
+   keywordstyle = [4]{\hs@styles@lst@basic\hs@styles@lst@keywordD},
+   basicstyle   = \hs@styles@lst@basic,
+   % line numbers:
+   numbers      = left, numbersep = \hs@length@lst@numsep,
+   numberstyle  = \hs@styles@lst@basic\hs@styles@lst@linenumbers\hs@lst@num@consume,
+   % line break:
+   breaklines   = true, extendedchars = true,
+   % TODO: \XC@nummixins0\hbox{\textcolor{hs@colors@lst@comments}{\codeprebreak}}
+   prebreak     = \rlap{\hs@font@fs@numbers$\hookleftarrow$},
+   % escapes:
+   % escapeinside = {\{->}{\}},
+   escapeinside = {--\ !*}{*!},
+   % space control
+   keepspaces=false
+}
+
+% lst deep injects a fi
+\def\hs@escape@collector@init{\begingroup\def\hs@@escape@collector@{\iftrue}\hs@escape@collector}
+\def\hs@escape@collector@consume#1{\appto\hs@@escape@collector@{#1}\hs@escape@collector}
+\def\@hs@escape@collector{%
+%if the meaning of the char contains '\lst@escapeend' with a macro definition we are done!
+% \typeout{{\noexpand\lst@escapeend}{\@search}}
+\expandarg\IfSubStr*{\meaning\@escape@lookahead}{\noexpand\lst@escapeend}{%
+% \typeout{YES}% emit the collectio
+   \global\let\@hs@escape@collected\hs@@escape@collector@\endgroup
+   \hs@escape@aftercollect
+}{%
+   \hs@escape@collector@consume
+}%
+}
+
+\def\hs@escape@collector{%
+   \futurelet\@escape@lookahead\@hs@escape@collector
+}
+% \hs@escape@collector
+% \@ifnextchar\@nil{{\MT{\GetType{#1}}}}
+% {\MT{\GetType{#1}}}
+
+\lstdefinestyle{hs@main@plain}{%
+   style=hs@main,xleftmargin=\z@,xrightmargin=\z@,%
+   numbers=none,numbersep=\z@
+}
+
+% make custom ligatures
+\usepackage{xstring}
+\def\hsinlinetypewrap#1{% get those ligatures
+   \protected@edef\@tmp@typeout{#1}%
+   \StrSubstitute{\@tmp@typeout}{->}{\texttt{\toLig}}[\@tmp@typeout]%
+   \StrSubstitute{\@tmp@typeout}{=>}{\texttt{\ToLig}}[\@tmp@typeout]%
+   \StrSubstitute{\@tmp@typeout}{::}{\texttt{\colLig}}[\@tmp@typeout]%
+   \textsf{\tiny\color{gray}\@tmp@typeout}%
+}%
+% in order to stay compatible we use a faked minted environment:
+\def\hs@minted@setup#1#2#3{\lstset{language=#1,style=#2,#3}}
+% allows to map languages
+
+\def\hs@minted@language@mapping#1{\@ifundefined{hs@@minted@#1}{#1}{\csname hs@@minted@#1\endcsname}}
+\def\fakemintedmap#1#2#3{\expandafter\def\csname hs@@minted@#1\endcsname{#2}\expandafter\def\csname hs@@minted@#1@glob\endcsname{#3}}
+
+\def\hssetmintedstyle#1{\def\hs@minted@style{#1}}
+\hssetmintedstyle{hs@main@plain}% TODO: configure makros
+% TODO
+\lstnewenvironment{minted}[2][]{\begingroup\csname hs@@minted@#2@glob\endcsname\edef\@tmp{\hs@minted@language@mapping{#2}}\expandafter\expandafter\expandafter\hs@minted@setup\expandafter\expandafter\expandafter{\expandafter\@tmp\expandafter}\expandafter{\hs@minted@style}{#1}}{\endgroup}
+
+
+% we define the haskell language
+\colorlet{haskell@escapecolor}{uulmaccent!70!black}
+\def\HaskellListingsEscape#1{\textcolor{haskell@escapecolor}{#1}}
+\lstdefinelanguage{lHaskell}{
+   language=haskell,
+   comment=[l]{--},
+   showstringspaces=false,
+   deletekeywords={Maybe,Either,Nothing,Just,Left,Right,\$,Prelude,stdin,stdout,stderr,lookup},
+   morecomment=[s]{\{-}{-\}},
+   morekeywords = {String,Reader,Char,Bool,Show,as,Applicative,ByteString,Text,Identity,IsString,MVar,ZipList,MonadState,MonadReader,MonadWriter,MonadError,MonadFail,Alternative,MonadPlus,Connection,StateT,State,Writer,ReaderT,WriterT,liftIO,Arbitrary,Foldable,Monoid,Semigroup,Traversable,Id,foreign},
+   morekeywords = [3]{runTCPClient,forever,finally,withSocketsDo,runTCPServer,readMVar,modifyMVar_,mfilter,throwError,catchError,catchIOError,sendAll,withBinaryFile,unpack,pack,recv,fmap,hSetEcho,hSetBuffering,hGetContents,isDoesNotExistError,show,acceptRequest,withPingThread,receiveData,sendTextData,runClient,runServer,newMVar,sendClose,forkIO,forM_,uniformR,runStateGen,manyTill,string,anyChar,crlf,space,printf,gets,get,ask,asks,hspec,modifyMaxSuccess,fold,foldMap,toList,traverse,sequenceA,fromList,generate,arbitrary,frequency,foldM_,modify,evalStateT,execWriterT,execStateT,runStateT,runWriterT,evalReaderT,runReaderT,replicateM,randomRM,runWriter,runState,evalState,state,execState,put,state,runReader,runIdentity,local,reader,writer,listen,pass,execWriter,mempty,mappend,lift,mconcat,lookup,ap},
+   morekeywords = [3]{True,False,Maybe,Either,Nothing,Just,Left,Right,pure},
+   morekeywords = [5]{:l,:cd,:q,:r,:t},
+   keywordstyle = [5]{\bfseries},
+   % morekeywords = [5]{Prelude>,\*Main>},
+   alsoletter={},
+   showstringspaces=false,
+   moredelim=[il][{\color{lightgray}}]{go>},
+   moredelim=[is][{\color{lightgray}}]{grout>}{<grout},
+   moredelim=[is][{\color{hs@colors@lst@literals}}]{:':>}{<:':},
+   moredelim=**[is][\hsGetStyle{numbers}]{|num|}{|num|},
+   add to literate={:...:}{{{\textcolor{gray}{\ldots}}}}1 {@}{{{\HaskellListingsEscape{@}}}}1 {\\}{{{\HaskellListingsEscape{\textbackslash}}}}1 {:Penguin:}{{{\emoji{penguin}}}}1 {LANGUAGE}{{{\textit{\sffamily\color{hs@colors@lst@numbers}LANGUAGE}}}}8 {MINIMAL}{{{\textit{\sffamily\color{hs@colors@lst@numbers}MINIMAL}}}}7 {:CRLF:}{{{\scriptsize\textcolor{lightgray}{\textbackslash r\textbackslash n}}}}3 {:":}{{{"}}}1 {foldl1}{{{\hsGetStyle{keywordA}{foldl1}}}}6 {foldr1}{{{\hsGetStyle{keywordA}{foldr1}}}}6
+}
+
+\def\kwA#1{{\hsGetStyle{keywordA}#1}}
+
+\def\MagicHaskellLiterates{}
+\newcommand\AddMagicLiterate[3][\magicLink]{%
+   \AddMagicLiterateX[#1]{#2}{#3}{#3}%
+}
+\newcommand\AddMagicLiterateX[4][\magicLink]{%
+   \StrLen{#3}[\@cclen]%
+   \xappto\MagicHaskellLiterates{\unexpanded{{#3}{{{#1{#2}{#4}}}}}{\@cclen}}%
+}
+
+\newcommand\AddMagicLiterateP[4][\magicLink]{%
+\xappto\MagicHaskellLiterates{\unexpanded{{#3}{{{#1{#2}{#3}}}}}{#4}}%
+}
+
+\def\BaseVersion{4.20.0.1}
+\def\MtlVersion{2.3.1}
+\def\ArrayVersion{0.5.8.0}
+\def\HspecVersion{2.11.10}
+\def\HspecExpVersion{0.8.4}
+\def\ByteStringVersion{0.12.1.0}
+\def\QuickCheckVersion{2.15.0.1}
+\def\ParsecVersion{3.1.17.0}
+\def\HspecExpBase{https://hackage.haskell.org/package/hspec-expectations-\HspecExpVersion/docs}
+\def\HspecBase{https://hackage.haskell.org/package/hspec-\HspecVersion/docs}
+\def\ArrayBase{https://hackage.haskell.org/package/array-\ArrayVersion/docs}
+\def\HsBase{https://hackage.haskell.org/package/base-\BaseVersion/docs}
+\def\MtlBase{https://hackage.haskell.org/package/mtl-\MtlVersion/docs}
+\def\QuickCheckBase{https://hackage.haskell.org/package/QuickCheck-\QuickCheckVersion/docs}
+\def\ByteStringBase{https://hackage.haskell.org/package/bytestring-\ByteStringVersion/docs}
+\def\ParsecBase{https://hackage.haskell.org/package/parsec-\ParsecVersion/docs}
+\def\HsBaseType#1#2{\HsBase/#1.html\#t:#2}
+\def\HsBaseFunc#1#2{\HsBase/#1.html\#v:#2}
+\newcommand\AddHsTLitR[2][Data]{\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{#1-#2}{#2}}{#2}}
+\newcommand\AddHsFLitR[3][Data]{\AddMagicLiterate[\Clink{keywordC}]{\HsBaseFunc{#1-#2}{#3}}{#3}}
+\newcommand\AddHsFLits[3][Data]{\foreach \FL in {#3} {\edef\@tmp{\noexpand\AddHsFLitR[#1]{#2}{\FL}}\@tmp}}
+
+\AddMagicLiterate{https://hackage.haskell.org/package/random-1.2.1.1/docs/System-Random.html\#v:randomRIO}{randomRIO}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Ordering}}{Ordering}
+\AddMagicLiterate{\HsBaseType{Prelude}{Ordering}}{LT}
+\AddMagicLiterate{\HsBaseType{Prelude}{Ordering}}{EQ}
+\AddMagicLiterate{\HsBaseType{Prelude}{Ordering}}{GT}
+
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Num}}{Num}
+\def\literatemultcmds{}
+\foreach \c in {abs,head,tail,last,init,take,takeWhile,drop,dropWhile,inits,concat,concatMap,sconcat,stimes,elem,signum,negate,reverse,zip,unzip,fromInteger,length,lookup,map,filter,otherwise,flip,mod,const,read,show,fmap,id,notElem,readFile,writeFile,appendFile,readIO,readLn,ioError,userError,interact,putChar,print,putStr,putStrLn,hgetChar,getChar,getLine,getContents,lines,words,unlines,unwords,zipWith,zip3,zipWith3,unzip3,span,repeat,replicate,iterate,cycle,fst,snd,curry,uncurry,error,errorWithoutStackTrace,undefined,seq,dropWhile,dropWhile2,dropWhile3} {
+   \xappto\literatemultcmds{\noexpand\AddMagicLiterate[\noexpand\Clink{keywordC}]{\HsBaseFunc{Prelude}{\c}}{\c}}
+}
+\literatemultcmds
+
+\xappto\MagicHaskellLiterates{\unexpanded
+{{lookupPenguin}{lookupPenguin}{13}}}
+
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Eq}}{Eq}
+%\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Read}}{Read}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Show}}{Show}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Bounded}}{Bounded}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Enum}}{Enum}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Real}}{Real}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Fractional}}{Fractional}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Int}}{Int}
+\AtEndPreamble{\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Integral}}{Integral}}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{RealFrac}}{RealFrac}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Floating}}{Floating}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{RealFloat}}{RealFloat}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Maybe}}{Maybe}
+\AddMagicLiterate[\Clink{keywordA}]{\HsBaseType{Prelude}{Either}}{Either}
+
+\AddMagicLiterate{\HsBaseFunc{Control-Monad-IO-Class}{liftIO}}{liftIO}
+\AddMagicLiterate[\Clink{keywordC}]{\MtlBase/Control-Monad-Reader.html\#v:asks}{asks}
+\AddMagicLiterate[\Clink{keywordC}]{\MtlBase/Control-Monad-State-Class.html\#v:modify}{modify}
+\AddMagicLiterate[\Clink{keywordC}]{\MtlBase/Control-Monad-State-Class.html\#v:get}{gett}
+\AddMagicLiterate{\HsBaseFunc{Prelude}{getLine}}{getLine}
+\AddMagicLiterate[\Clink{keywordC}]{\MtlBase/Control-Monad-State-Class.html\#v:put}{put}
+\AddMagicLiterate[\Clink{keywordC}]{\MtlBase/Control-Monad-State-Class.html\#v:state}{state}
+\AddMagicLiterate{\HsBaseFunc{Prelude}{compare}}{compare}
+\AddMagicLiterate{\HsBaseFunc{Prelude}{putStrLn}}{putStrLn}
+\AddMagicLiterate{\HsBaseFunc{Prelude}{putStr}}{putStr}
+\AddMagicLiterate{\MtlBase/Control-Monad-Reader.html\#t:ReaderT}{ReaderT}
+\AddMagicLiterate{\MtlBase/Control-Monad-Writer-Lazy.html\#t:WriterT}{WriterT}
+
+\AddMagicLiterate{\ByteStringBase/Data-ByteString.html\#t:ByteString}{ByteString}
+
+\def\Plink#1#2{{\def\xlink@color{prompt@color}\magicLink{#1}{\HaskellPrompt{#2}}}}
+
+\AddMagicLiterate{\MtlBase/Control-Monad-Writer-Lazy.html\#v:runWriterT}{runWriterT}
+\AddMagicLiterate{\MtlBase/Control-Monad-Reader.html\#v:runReaderT}{runReaderT}
+\AddMagicLiterate{\MtlBase/Control-Monad-Writer-Lazy.html\#v:tell}{tell}
+
+\AddMagicLiterateP[\Plink]{\HsBase/Prelude.html\#v:-60--36-}{<\$}{2}
+\AddMagicLiterateP[\Plink]{\HsBase/Prelude.html\#v:-60--36--62-}{<\$>}{3}
+\AddMagicLiterate[\Plink]{\HsBase/Prelude.html\#v:-60--42--62-}{<*>}
+\AddMagicLiterate[\Plink]{\HsBase/Prelude.html\#v:-33--33-}{!!}
+
+\AddMagicLiterateX[\hasktexlink]{\HsBase/Prelude.html\#v:-61--61-}{==}{={\kern.1pt}=}
+\AddMagicLiterateX[\hasktexlink]{\QuickCheckBase/Test-QuickCheck..html\#v:-61--61--62-}{==>}{={\kern.1pt}=>}
+\AddMagicLiterate[\hasktexlink]{\HsBase/Prelude.html\#v:-43--43-}{++}
+\AddMagicLiterateX[\hasktexlink]{\HsBase/Prelude.html\#v:-62--62-}{>>}{>{\kern-.1pt}>}
+\AddMagicLiterate[\hasktexlink]{\HsBase/Prelude.html\#v:-62--62--61-}{>>=}
+\AddMagicLiterateP[\hasktexlink]{\HsBase/Prelude.html\#v:-36-}{\$}{1}
+
+\newcommand\AddHsTLit[3][Data]{\AddHsTLitR[#1]{#2}\AddHsFLits[#1]{#2}{#3}}
+
+\AddHsTLitR{Bool}
+\AddHsTLitR{Float}
+\AddHsTLitR{Double}
+\AddHsTLitR{String} % """"""
+\AddHsTLitR{Char}
+\AddHsTLitR{Int}
+\AddHsTLitR{Integer}
+% short must come first
+\AddHsTLit{Foldable}{fold,foldr,foldl,foldr1,foldl1,foldMap,toList,length,maximum,minimum,sum,prod}
+
+\AddMagicLiterateX[\Clink{keywordC}]{\HsBase/Data-List.html\#v:foldl-39-}{foldl'}{foldl'}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:foldM}{foldM3}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:foldM}{foldM}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:liftM}{liftM}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:liftM3}{liftM3}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:filterM}{filterM}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:mfilter}{mfilter}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:guard}{guard}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:when}{when}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:unless}{unless}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:void}{void}
+
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:sequence}{sequence}
+\AddMagicLiterateP[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:sequence_}{sequence_}{9}
+% \AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:ap}{ap}
+
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Text-Read.html\#v:readMaybe}{readMaybe}
+
+% disable (partial) automatic links for self=defined names
+\AddMagicLiterate[]{}{mapTreeM}
+\AddMagicLiterate[]{}{mapTree}
+\AddMagicLiterate[]{}{notDots}
+\AddMagicLiterate[]{}{getDirectoryContents}
+\AddMagicLiterate[]{}{sumTree}
+\AddMagicLiterate[]{}{reverse1}
+\AddMagicLiterate[]{}{reverse2}
+\AddMagicLiterate[]{}{reverse3}
+\AddMagicLiterate[]{}{elements}
+\AddMagicLiterate[]{}{Ordering}
+\AddMagicLiterate[]{}{lengthCompare}
+\AddMagicLiterate[]{}{ShowView}
+\AddMagicLiterate[]{}{breadcrumb}
+\AddMagicLiterate[]{}{breadcrumbText}
+\AddMagicLiterate[]{}{renderBreadcrumb}
+\AddMagicLiterate[]{}{ShowPostAction}
+\AddMagicLiterate[]{}{filterWhere}
+\AddMagicLiterate[]{}{ParseError}
+\AddMagicLiterate[]{}{ParseMonad}
+\AddMagicLiterate[]{}{CalcError}
+\AddMagicLiterate[]{}{parseHexDigit}
+\AddMagicLiterate[]{}{parseHex}
+\AddMagicLiterate[]{}{parseDigit}
+\AddMagicLiterate[]{}{digitToInt}
+\AddMagicLiterate[]{}{parseWord}
+\AddMagicLiterate[]{}{get2chars}
+\AddMagicLiterate[]{}{get4chars}
+\AddMagicLiterate[]{}{RealWorld}
+\AddMagicLiterate[]{}{printError}
+
+
+\AddHsTLit{Enum}{fromEnum}
+\AddHsTLit{Monoid}{mempty,mappend,mconcat}
+
+\AddHsTLit{Traversable}{traverse,sequence,sequenceA,mapM}
+% TODO: maybe automatically care about length in the future
+\AddHsTLit{Semigroup}{}
+\AddMagicLiterate{\HsBase/Prelude.html\#v:-60--62-}{<>}
+% todo: support for <$ and the like
+\AddHsTLit{Functor}{fmap}
+% TODO: <*>, <*, *>
+\AddHsTLit[Control]{Applicative}{pure,liftA2}
+% TODO: >>=, >>
+\AddHsTLit[Control]{Monad}{return}
+
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad-ST.html\#v:runST}{runST}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:replicateM}{replicateM}
+\AddMagicLiterateP[\Clink{keywordC}]{\HsBase/Control-Monad.html\#v:replicateM_}{replicateM\_}{11}
+
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-IORef.html\#v:newIORef}{newIORef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-IORef.html\#v:readIORef}{readIORef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-IORef.html\#v:writeIORef}{writeIORef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-IORef.html\#v:modifyIORef}{modifyIORef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-IORef.html\#v:modifyIORef'}{modifyIORef'}
+
+
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-STRef.html\#v:modifySTRef}{modifySTRef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-STRef.html\#v:modifySTRef'}{modifySTRef'}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-STRef.html\#v:newSTRef}{newSTRef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-STRef.html\#v:writeSTRef}{writeSTRef}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBase/Data-STRef.html\#v:readSTRef}{readSTRef}
+
+\AddMagicLiterate[\Clink{keywordC}]{\ArrayBase/Data-Array-ST.html\#v:runSTArray}{runSTArray}
+\AddMagicLiterate[\Clink{keywordC}]{\ArrayBase/Data-Array-ST.html\#v:readArray}{readArray}
+\AddMagicLiterate[\Clink{keywordC}]{\ArrayBase/Data-Array-ST.html\#v:writeArray}{writeArray}
+
+\AddMagicLiterate[\Clink{keywordC}]{\HspecBase/Test-Hspec-QuickCheck.html\#v:modifyMaxSuccess}{modifyMaxSuccess}
+\AddMagicLiterate[\Clink{keywordC}]{\HspecBase/Test-Hspec.html\#v:hspec}{hspec}
+\AddMagicLiterate[\Clink{keywordC}]{\HspecExpBase/Test-Hspec-Expectations.html\#v:shouldBe}{shouldBe}
+
+\AddMagicLiterate[\Clink{keywordC}]{\HsBaseFunc{Prelude}{getArgs}}{getArgs}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBaseFunc{Prelude}{getProgName}}{getProgName}
+\AddMagicLiterate[\Clink{keywordC}]{\HsBaseFunc{Prelude}{append}}{append}
+% TODO: temp
+\AddMagicLiterate[]{}{modifyGetSTRef'}
+\AddMagicLiterate[]{}{appendL}
+\AddMagicLiterate[]{}{appendR}
+\AddMagicLiterate[]{}{tails}
+
+%\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:parse}{parse}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:char}{char}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:between}{between}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:many}{many}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:many1}{many1}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:noneOf}{noneOf}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:sepBy}{sepBy}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:digit}{digit}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:oneOf}{oneOf}
+\AddMagicLiterate[\Clink{keywordC}]{\ParsecBase/Text-Parsec.html\#v:string}{string}
+
+\AddMagicLiterate[\Clink{keywordA}]{\HsBase/Control-Monad.html\#t:MonadPlus}{MonadPlus}
+
+\def\Blk#1{\AddMagicLiterate[]{}{#1}}
+\Blk{JNumber}\Blk{JBool}\Blk{JString}\Blk{JNull}\Blk{JObject}\Blk{JArray}
+\Blk{parseNull}\Blk{parseBool}\Blk{parseNull}\Blk{parseNumber}\Blk{parseRawString}
+\Blk{parseString}\Blk{parseArray}\Blk{parseJSON}\Blk{parseObject}\Blk{parseObjectElement}
+\Blk{:sprint}\Blk{reconstructPath}\Blk{LineNumber}
+
+\AtEndPreamble{%
+\edef\@tmp{\noexpand\lstdefinelanguage{lMagicHaskell}{%
+   language=lHaskell,
+   add to literate=\expandonce{\MagicHaskellLiterates}
+}}\@tmp}
+
+\let\hasktexlink\href
+\newcommand*\magicLink[2]{\href{#1}{\color{darkgray}#2}}
+\newcommand*\Clink[3]{\href{#2}{\hsGetStyle{#1}{#3}}}
+\fakemintedmap{mhs}{lMagicHaskell}{}
+% TODO: deal with fold when overleaded etc etc etc or insert
+
+% and map it to minted
+\fakemintedmap{haskell}{lHaskell}{}
+% automate
+% \lstnewenvironment{hscode}[1][]{\expandafter\expandafter\expandafter\hs@minted@setup\expandafter\expandafter\expandafter{lHaskell}\expandafter{\hs@minted@style}{#1}}{}
+
+\colorlet{prompt@color}{gray}
+\def\HaskellPrompt#1{\textcolor{prompt@color}{#1}}
+\lstdefinelanguage{lGHCi}{
+   language=lMagicHaskell,
+   morekeywords = [3]{ghc,ghci,runghc,runhaskell},
+   alsoletter={:},
+   morekeywords=[4]{:set,:load,:info,:kind,:reload,:i,:r,:k},
+   moredelim=[il][{}]{out>},
+   moredelim=[is][{}]{out->}{<-out},
+   moredelim=**[il][{{\Large\strut}}]{in>}, % \sbseries?
+   add to literate=% {\$}{{{\BeginAccSupp{method=hex,ActualText={\$}}\textcolor{prompt@color}{\$}\EndAccSupp{}}}}1
+   {ghci>}{{{\smallskip\BeginAccSupp{method=hex,ActualText={}}\HaskellPrompt{ghci>}\EndAccSupp{}}}}5 {\\'}{{{\hsGetStyle{escapes}\textbackslash '}}}2
+   {ghci-Text.Regex.Posix>}{{{\smallskip\BeginAccSupp{method=hex,ActualText={}}\HaskellPrompt{ghci Text.Regex.Posix>}\EndAccSupp{}}}}{22} {:...:}{{{\textcolor{gray}{\ldots}}}}1
+}
+\fakemintedmap{ghci}{lGHCi}{}
+
+\lstdefinelanguage{lBash}{
+   language=bash,
+   morekeywords = [3]{ghc,ghci},
+   alsoletter = {},
+   moredelim=[il][{}]{out>},
+   moredelim=[is][{}]{out->}{<-out},
+   moredelim=**[il][{{\Large\strut}}]{in>},
+   add to literate= {\$}{{{\BeginAccSupp{method=hex,ActualText={}}\HaskellPrompt{\$}\EndAccSupp{}}}}1
+   {ghci>}{{{\smallskip\BeginAccSupp{method=hex,ActualText={}}\HaskellPrompt{ghci>}\EndAccSupp{}}}}5
+}
+% and map it to minted
+\fakemintedmap{bash}{lBash}{}
+
+\lstdefinelanguage{lText}{
+   add to literate={:CRLF:}{{{\scriptsize\textcolor{lightgray}{\textbackslash r\textbackslash n}}}}3
+}
+% no num for text now
+\let\hstextnum\hsdisablenumhl
+\fakemintedmap{text}{lText}{\hstextnum}
+
+\def\@minted@inline#1#2#3{\lstinline[language=#1,style=hs@main@plain,keepspaces=true,breakatwhitespace,prebreak=\unexpanded{\rlap{\hs@font@fs@numbers$\hookleftarrow$}},#2]{#3}}
+
+\newcommand\mintinline[3][]{%
+\bgroup\strut
+   \csname hs@@minted@#2@glob\endcsname
+   \protected@edef\@tmp{\hs@minted@language@mapping{#2}}%
+   \expandafter\@minted@inline\expandafter{\@tmp}{#1}{#3}%
+\egroup
+}
+
+
+% now we start adding support for automatic types etc :D
+\providecommand\libdir{../}
+\usepackage{\libdir/lib/hasktex/hasktex}
+
+\usepackage{fancyvrb} % improve write out
+\usepackage{environ}
+% type support with write out
+\def\@haskell@verb@out@filename@prefix{\jobname-}
+\newenvironment{haskell}[1]{\begingroup
+% TODO: jobname prefix
+\edef\@haskell@verb@out@filename@curname{\@haskell@verb@out@filename@prefix#1}%
+\VerbatimEnvironment
+\begin{VerbatimOut}{\@haskell@verb@out@filename@curname}%
+}{\end{VerbatimOut}%
+% \@gobble consumes dash
+\def\@gobbledash<-{}%
+% \def\hasktex@wrap##1{\noexpand\hsinlinetypewrap{##1}\noexpand\@gobbledash}% wrap with type wrap; guard lift
+\def\T(##1){\hsinlinetypewrap{\GetType{##1}}\@gobbledash}%
+\LoadTypesFrom{\@haskell@verb@out@filename@curname}%
+\lstinputlisting[style=hs@main@plain,language=lHaskell]{\@haskell@verb@out@filename@curname}\endgroup}
+%\newcommand\ihs[1][]{\mintinline[#1]{haskell}}
+\newcommand\ihs[1][]{\mintinline[#1]{mhs}}
+\newcommand\itxt[1][]{\mintinline[#1]{text}}
+
+% TODO: maybe allow if i decide to allow copy: \BeginAccSupp{ActualText={->}}
+\colorlet{@rawtypecolor}{lightgray}
+\def\@typeShift#1{\raisebox{.75pt}{\T{\hbox{#1}}}}
+\robustify\@typeShift
+\def\TypeSubstitute#1{\StrSubstitute{#1}{||>}{{\@typeShift{|\kern-3.5pt|>}}}[\@tmp]\StrSubstitute{\@tmp}{|>}{{\@typeShift{|>}}}[\@tmp]\StrSubstitute{\@tmp}{->}{{\ensuremath{\rightarrow}}}[\@tmp]\StrSubstitute{\@tmp}{=>}{{\ensuremath{\Rightarrow}}}[\@tmp]}
+\robustify\TypeSubstitute
+\def\RawTypePrint#1{\textcolor{@rawtypecolor}{\TypeSubstitute{#1}\BeginAccSupp{ActualText={}}\footnotesize\textsf{\@tmp}\EndAccSupp{}}}
+
+% TODO: inline
+\def\copyspace{\BeginAccSupp{method=hex,unicode,ActualText=00A0}\hphantom{ }\EndAccSupp{}}
+\def\nocopy#1{\BeginAccSupp{method=hex,ActualText={}}#1\EndAccSupp{}}
+\endinput

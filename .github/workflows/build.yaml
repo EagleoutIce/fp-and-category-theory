@@ -1,0 +1,67 @@
+name: build slides
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.head_ref || github.ref }}-${{ github.event_name }}"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # full TeX Live (lualatex, latexmk, biber); GHC is added below for the GHCi sessions
+    container: texlive/texlive:latest
+    permissions:
+      contents: write   # the PDFs go to the gh-pages branch
+    steps:
+      - name: Install GHC, git and make
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ghc git make
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Build the slides (handout and animated, long and short) and the short versions with notes
+        run: make compile short notes
+
+      - name: Upload the PDFs
+        uses: actions/upload-artifact@v7
+        with:
+          name: slides
+          path: |
+            noanim-category-theory-abstractions.pdf
+            anim-category-theory-abstractions.pdf
+            noanim-short-category-theory-abstractions.pdf
+            anim-short-category-theory-abstractions.pdf
+            noanim-short-notes-category-theory-abstractions.pdf
+            anim-short-notes-category-theory-abstractions.pdf
+
+      - name: Upload the logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs
+          path: build/*.log
+          if-no-files-found: ignore
+
+      - name: Publish the PDFs to gh-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p /tmp/pages
+          cp noanim-category-theory-abstractions.pdf anim-category-theory-abstractions.pdf noanim-short-category-theory-abstractions.pdf anim-short-category-theory-abstractions.pdf noanim-short-notes-category-theory-abstractions.pdf anim-short-notes-category-theory-abstractions.pdf /tmp/pages/
+          cd /tmp/pages
+          git init -b gh-pages
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git add .
+          git commit -m "Compiled slides for ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

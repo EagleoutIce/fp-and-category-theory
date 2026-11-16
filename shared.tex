@@ -1,0 +1,198 @@
+\usepackage{fontspec}
+\usepackage{mathtools}
+\usepackage{unicode-math}
+\usepackage{csquotes}
+\usepackage{accsupp}
+
+\usepackage[lining]{FiraSans}
+
+% do not like the lambda
+\setmonofont{FiraCode}[
+   Path = data/fonts/,
+   Scale = 1,
+   Extension = .ttf,
+   Contextuals=Alternate,
+   BoldFont={*-Bold},
+   UprightFont={*-Regular},
+]
+
+\setmathfont{FiraMath-Regular}[
+   Path = data/fonts/,
+   Scale = 1.05,
+   Extension = .otf
+]
+
+% TODO: find better/matching font? fira math is weird for greek stuff
+\setmathfont[range={it/{greek,Greek},bfit/{greek,Greek}}]{lato}
+\setoperatorfont\mathsf
+
+\makeatletter
+
+\def\todo#1{\textbf{\color{red}TODO:~\itshape#1}}
+\def\Y{}
+\def\I{}\def\S{}\def\K{}
+\usepackage{xspace}
+
+\def\InstallShortcuts{%
+%
+\def\textlambda{\lambda}%
+\renewcommand\l[1][@main]{\ensuremath{{\color{##1}\symbf\textlambda}}}%
+\def\L{\texorpdfstring{\ensuremath{\textlambda}}{\text{Lambda}}}%
+\renewcommand\Y[1][@main]{\ensuremath{{\color{##1}\mathbf{Y}}}\xspace}%
+\renewcommand\I[1][uulmaccent]{\ensuremath{{\color{##1}\mathbf{I}}}\xspace}%
+\renewcommand\S[1][uulmaccent]{\ensuremath{{\color{##1}\mathbf{S}}}\xspace}%
+\renewcommand\K[1][uulmaccent]{\ensuremath{{\color{##1}\mathbf{K}}}\xspace}%
+\def\ifelse{\textsf{\textsl{ifelse}}\xspace}%
+\def\pred{\textsf{\textsl{pred}}\xspace}%
+\def\isZero{\textsf{\textsl{isZero}}\xspace}%
+\def\T##1{\ifmmode\text{\texttt{##1}}\else\texttt{##1}\fi}%
+\def\say##1{\enquote{##1}}%
+\def\RED##1##2{\smash{\ensuremath{{}##1_{\rlap{\raisebox{3pt}{$\scriptstyle\color{uulmaccent}##2$}}}\mkern-.705mu{}}}}%
+\def\IRED##1##2{\smash{\ensuremath{~~\;{}##1_{\raisebox{3pt}{$\scriptstyle\color{uulmaccent}##2$}}}~~}}%
+\def\alphaconv{\RED=\alpha}%
+\def\etaconv{\RED=\eta}%
+\def\ialphaconv{\IRED=\alpha}%
+\def\ibaseconv{\IRED={\phantom{\alpha}}}%
+\def\ietaconv{\IRED=\eta}%
+\def\betared##1{\RED={\beta_{\raisebox{-3pt}{\(\scriptscriptstyle##1\)}}}}%
+\def\ibetared##1{\IRED={\beta_{\raisebox{-3pt}{\(\scriptscriptstyle##1\)}}}}%
+\def\b[##1->##2]{\ensuremath{\T{{\color{uulmaccent}[##1\(\;\rightarrow\;\)##2]}}}}%
+\def\@noxspace{}%
+\xspaceaddexceptions{\@noxspace}%
+\def\BR[##1->##2]{\ensuremath{\T{{\color{uulmaccent}[##1\@noxspace$\;\rightarrow\;$##2\@noxspace]}}}}%
+% TODO: beta short red
+}
+\InstallShortcuts
+
+\usepackage{xcolor}
+% colors
+\definecolor{uulmlogoblue}{HTML}{89a2b3}
+\definecolor{uulmblue}{HTML}{7D9AAA}
+\definecolor{uulmaccent}{HTML}{A9A28D}
+\definecolor{green}{HTML}{56AA1C}
+\definecolor{red}{HTML}{A32638}
+\definecolor{orange}{HTML}{DF6D07}
+\definecolor{blue}{HTML}{26547C}
+\definecolor{accent}{HTML}{563C5C}
+
+\colorlet{@main}{accent}
+
+\preto\input@path{{lib/beamer-themes}{lib/tikzpingus/tex}{lib/fancyqr}{lib/algorithms}}
+\usepackage{lib/fancyqr/fancyqr}
+\usepackage{lib/algorithms/nice-algo}
+\SetAlgoVlined
+\RestyleAlgo{plain}
+
+\input{lib/feature-diagram/feature-diagram.tex}
+\def\pingulibpathprefix{lib/tikzpingus/tex/}
+\usepackage[glows]{lib/tikzpingus/tex/tikzpingus}
+\makeatletter
+\usetikzlibrary{tikzmark,arrows.meta}
+% The aux file is read inside the document group, where every \csname of a
+% new mark creates a local \relax entry. With tens of thousands of
+% remember-picture marks this exhausts TeX's save stack (save size), so we
+% scope each entry; the actual definitions are global anyway.
+\let\fp@savepicturepage\savepicturepage
+\def\savepicturepage#1#2{\begingroup\fp@savepicturepage{#1}{#2}\endgroup}
+\let\fp@pgfsyspdfmark\pgfsyspdfmark
+\def\pgfsyspdfmark#1#2#3{\begingroup\fp@pgfsyspdfmark{#1}{#2}{#3}\endgroup}
+\tikzset{
+   @O/.style={overlay,remember picture},
+   T/.style={uulmaccent!60!lightgray,font=\footnotesize\itshape\sffamily,line cap=round},
+   lcr/.style={line cap=round}
+}
+\def\HStrut{\vphantom{\{tg}}% }<- wrong hl
+\def\Snode#1{\tikzmarknode{#1}\HStrut}%
+\def\TSnode#1{\subnode{#1}\HStrut}%
+\def\bnode#1#2{\rnode{#1}{\hsGetStyle{basic}{#2}}}%
+\def\rnode#1#2{\Snode{#1}#2\Snode{#1@}}
+\def\TBM#1#2{\Snode{#1}#2\Snode{#1@}}
+\def\hlcolor{@main}\def\hlopa{0.25}\def\hlhs{.4mm}% horizonal shift
+\newcommand\hlrawbehindcodeunder[4][0pt]{\setbox0=\hbox{\pgfinterruptpicture\HStrut\endpgfinterruptpicture}\fill[\hlcolor,opacity=\hlopa,rounded corners=1pt] ([shift={(-\hlhs,-#1-1.6pt)}]#4#2) rectangle ([shift={(\hlhs,-#1+1.6pt)}]#4#2@); \coordinate (#3) at (#4#2@);
+\path ([shift={(-\hlhs,-#1+.95\dp0)}]#4#2) -- ([shift={(\hlhs,-#1+.95\ht0)}]#4#2@) coordinate[pos=.5,yshift=1mm] (#3_up);
+\path ([shift={(-\hlhs,-#1-.95\dp0)}]#4#2) -- ([shift={(\hlhs,-#1+.95\ht0)}]#4#2@) coordinate[pos=.5,yshift=-1mm-1.6pt] (#3_down); }
+\newcommand\hlbehindcodeunder[3][0pt]{\hlrawbehindcodeunder[#1]{#2}{#3}{pic cs:}}
+\newcounter{ULcounter}
+\def\UL#1{\Snode{@ul@\theULcounter}#1\Snode{@ul@\theULcounter @}\tikz[@O]{\hlbehindcodeunder{@ul@\theULcounter}{@>}}\stepcounter{ULcounter}}
+
+\def\G#1{\textcolor{gray}{#1}}
+\def\Gopen{\textcolor{gray}{(}}
+\def\Gclose{\textcolor{gray}{)}}
+\newcommand\hlbehindcode[3][2pt]{\setbox0=\hbox{\pgfinterruptpicture\HStrut\endpgfinterruptpicture}\fill[\hlcolor,opacity=\hlopa,rounded corners=1pt] ([shift={(-\hlhs,-#1-.95\dp0)}]pic cs:#2) rectangle ([shift={(\hlhs,#1+.95\ht0)}]pic cs:#2@); \coordinate (#3) at ([yshift=.475\ht0]pic cs:#2@);
+\path ([shift={(-\hlhs,#1+.95\dp0)}]pic cs:#2) -- ([shift={(\hlhs,#1+.95\ht0)}]pic cs:#2@) coordinate[pos=.5,yshift=1mm] (#3_up);\path ([shift={(-\hlhs,-#1-.95\dp0)}]pic cs:#2) -- ([shift={(\hlhs,-#1+.95\ht0)}]pic cs:#2@) coordinate[pos=.5,yshift=-1mm] (#3_down); }% hardcoded 1mm padding
+% just underlines as there are no vert buffers:D
+
+\newsavebox\pingubox
+
+
+\let\hl\relax
+\usepackage{lib/latex-underline/fancy-underline}
+
+% Konfiguration der Unterstriche bei Links
+\def\fancyul@depth{.965\p@}
+\def\fancyul@contour{.2\p@}
+\colorlet{tcbcolback}{white}
+\def\fancyulbackground{tcbcolback}% so that it adapts with the beamer
+% we must hook the background for the boxes
+
+\colorlet{url@line@color}{uulmaccent}
+\fancyulcolor{url@line@color!45!\fancyulbackground}
+\newdimen\ul@surround \ul@surround=1.35\p@
+% we make the auto detection of the depth bigger
+\def\update@ul{\setbox\z@\hbox{{(j}}\edef\fancyul@thickness{\the\dimexpr.2\dp\z@}}
+\def\rawlink#1{\leavevmode\kern-\ul@surround{\update@ul\kern\ul@surround\relax\fancyul{#1}}}
+% define a link macro that can be used with href and fancyul
+\DeclareRobustCommand*\link{\hyper@normalise\link@do}
+\def\link@do#1#2{\leavevmode\kern-\ul@surround\href{#1}{\update@ul\kern\ul@surround\relax\fancyul{#2}}}% thinspace for some nicer padding
+\def\xlink@color{hs@colors@lst@keywordA}
+\DeclareRobustCommand*\Xlink{\hyper@normalise\Xlink@do}
+\def\Xlink@do#1#2{\leavevmode\kern-\ul@surround\href{#1}{\update@ul\kern\ul@surround\relax\color{\xlink@color}\fancyul{#2}}}% thinspace for some nicer padding
+\DeclareRobustCommand*\hlink{\hyper@normalise\hlink@do}
+\def\hlink@do#1#2{\leavevmode\kern-\ul@surround\hyperlink{#1}{\update@ul\kern\ul@surround\relax\fancyul{#2}}}%
+\usepackage{letltxmacro}
+\AtBeginDocument{%
+\LetLtxMacro\basicurl\url
+% \def\url{\begingroup\catcode`{11\catcode`}11\obeyspaces\obeylines\url@do}%
+% \def\url@do#1{\endgroup\link{#1}{#1}}%
+\DeclareRobustCommand*\url{\hyper@normalise\url@do}
+\def\url@do#1{\leavevmode\kern-\ul@surround\href{#1}{\update@ul\kern\ul@surround\relax\fancyul{#1}}}%
+\long\def\beamer@ref#1{\hlink@do{#1}{{\beamer@origref*{#1}}}}% the extra set of braces is for soul so that it can work with braces
+}
+\def\abs#1{\left|#1\right|}
+\def\N{\ensuremath{\mathbb{N}}}
+
+\colorlet{@thegray}{uulmaccent!20!gray}
+\def\info#1{\textcolor{@thegray}{\scriptsize\colorlet{@}{@thegray}#1}}
+\def\HL#1#2{\T{\link{#1}{#2}}}
+\def\DescHl{}
+\def\Mix{15}\def\MixB{5}
+
+\def\DescHeight{1.75cm}\def\DescText#1#2{\textbf{\vphantom{A}\smash{\DescHl\TLnk{#1}{#1}}}\nodepart{second}\parbox[c][\DescHeight]{.9\linewidth}{\footnotesize\DescHl\centering\T{#2}\endgraf}}
+\def\RawDescText#1#2{\textbf{\vphantom{A}\smash{\DescHl#1}}\nodepart{second}\parbox[c][\DescHeight]{.9\linewidth}{\footnotesize\DescHl\centering\T{#2}\endgraf}}
+\tikzset{@/.style={}}%
+\def\BSep{5mm}
+\def\RSep{9mm}
+
+\def\EnumPhrase{\link{https://stackoverflow.com/questions/58761160/why-isnt-enum-typeclass-a-subclass-of-ord-typeclass}{Enum is no subclass of Ord?}}
+\def\Yields{~~\textcolor{uulmaccent}{\faCaretRight}~~}%
+% \gappto\OuterStuff{\onslide<#1|handout:#2>{#4}}
+\def\ActiveOn#1#2#3{{\def\Mix{15}\def\MixB{5}\def\DescHl{}\only<3->{\def\Mix{5}\def\MixB{0}\def\DescHl{\color{gray}}}\only<#1|handout:#2>{\tikzset{K/.append style={black}}\def\Mix{15}\def\MixB{5}\def\DescHl{}}#3}}
+\newcommand\Lnk[3][Prelude]{\T{\href{https://hackage.haskell.org/package/base-4.21.0.0/docs/#1.html\#v:#2}{#3}}}
+\newcommand\LLnk[2][Prelude]{\T{\href{https://hackage.haskell.org/package/base-4.21.0.0/docs/#1.html\#v:#2}{\fancyul{#2}}}}
+\newcommand\TLnk[3][Prelude]{\T{\href{https://hackage.haskell.org/package/base-4.21.0.0/docs/#1.html\#t:#2}{#3}}}
+\newcommand\MLnk[2][Prelude]{\T{\href{https://hackage.haskell.org/package/base-4.21.0.0/docs/#1.html}{\fancyul{#2}}}}
+\newcommand\TTLnk[2][Prelude]{\T{\href{https://hackage.haskell.org/package/base-4.21.0.0/docs/#1.html\#t:#2}{\fancyul{#2}}}}
+\def\BLnk#1#2{\T{\href{https://hackage.haskell.org/package/base-4.21.0.0/docs/Control-Applicative.html\#v:#1}{#2}}}
+\tikzset{K/.style={rectangle,draw,rounded corners=3.5pt,text width=3cm,minimum height=1.9cm,align=center,inner sep=5pt,rectangle split,rectangle split parts=2,rectangle split part fill={#1!\Mix!white,#1!\MixB!}}}
+
+\def\CodeFileMarker#1{\CodeMarker{\llap{\faFileCodeO~\thinspace}#1}}
+\def\CodeMarker#1{{\color{lightgray!75!gray}\sffamily\footnotesize#1}}
+\colorlet{@filemarker}{lightgray!75!gray}
+\let\curpath\@empty
+
+\def\StartExcursion{%
+   \begingroup
+   \setbeamercolor{background canvas}{bg=gray!15}%
+   \appto\PlaceFramenumberUpperLeft{\smash{\rlap{\tikz[remember picture,overlay]\node[below right,font=\tiny,gray!50,scale=.75] at(current page.north west) {excursion};}}}%
+}
+\def\EndExcursion{\endgroup}

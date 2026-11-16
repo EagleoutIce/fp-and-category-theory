@@ -1,0 +1,21 @@
+[submodule "lib/beamer-themes"]
+	path = lib/beamer-themes
+	url = https://github.com/EagleoutIce/beamer-themes.git
+[submodule "lib/tikzpingus"]
+	path = lib/tikzpingus
+	url = https://github.com/EagleoutIce/tikzpingus
+[submodule "lib/fancyqr"]
+	path = lib/fancyqr
+	url = https://github.com/EagleoutIce/fancyqr.git
+[submodule "lib/latex-lambda-calculus-visualizer"]
+	path = lib/latex-lambda-calculus-visualizer
+	url = https://github.com/EagleoutIce/latex-lambda-calculus-visualizer
+[submodule "lib/latex-underline"]
+	path = lib/latex-underline
+	url = https://github.com/EagleoutIce/latex-underline
+[submodule "lib/magic-haskell"]
+	path = lib/magic-haskell
+	url = https://github.com/EagleoutIce/magic-haskell
+[submodule "lib/code-animation"]
+	path = lib/code-animation
+	url = https://github.com/EagleoutIce/code-animation
