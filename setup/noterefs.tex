@@ -1,0 +1,68 @@
+% Speaker notes kept outside the slides: notes/notes.tex holds one DefineNote entry per note (key and text), the frames
+% hold a NoteRef with the key. Without notes/notes.tex (the public copy) every \NoteRef expands to nothing.
+% tools/extract-notes moves new notes out of the slides.
+% This file leaves the catcode of @ as it finds it (session-global.tex inputs it while @ is a letter).
+\expandafter\chardef\csname LectureAtCatcode\endcsname=\catcode`\@
+\makeatletter
+\newcommand\DefineNote[2]{\long\expandafter\gdef\csname lecture@note@#1\endcsname{#2}}
+% \NoteRef{key} is \note{text}, if the key is defined
+\newcommand\NoteRef[1]{\ifcsname lecture@note@#1\endcsname
+   \expandafter\expandafter\expandafter\note\expandafter\expandafter\expandafter{\csname lecture@note@#1\endcsname}%
+\else\LectureNoteMissing{#1}\fi}
+% a key without text only warns, and only if notes/notes.tex is there (the public copy has none)
+\newif\iflecture@notesfile
+\newcommand\LectureNoteMissing[1]{\iflecture@notesfile\PackageWarningNoLine{lecture}{No text for the note #1 in notes/notes.tex}\fi}
+% the notes are read when the document starts, so that their text is read with the same catcodes as in the frames
+\AtBeginDocument{\IfFileExists{notes/notes.tex}{\lecture@notesfiletrue\input{notes/notes.tex}}{}}
+
+% The note builds (\LectureNotes defined, see the makefile) put the notes beside every slide and also into pdfpc
+% annotations. All other builds leave the notes out, as beamer does by default: they show no notes at all.
+\ifdefined\LectureNotes
+% the pdfpc package was written for pdfLaTeX, LuaTeX names the primitive differently
+\ifdefined\pdfannot\else\protected\def\pdfannot{\pdfextension annot }\fi
+\usepackage{letltxmacro}
+\usepackage{beamer-latex-pdfpc-notes}
+% the plain text of a note for pdfpc: its markers become lines and labels
+\makeatletter
+\LetLtxMacro\LecturePdfpcPlain\note
+% the annotation names its author, and the author of this deck is a link
+\newcommand\LecturePdfpcAnnot[1]{\begingroup\def\@author{Speaker notes}\LecturePdfpcPlain{#1}\endgroup}
+\ExplSyntaxOn
+\tl_new:N \l__lecture_pdfpc_tl
+\NewDocumentCommand\LectureNoteForPdfpc{m}
+   {
+      \tl_set:Nn \l__lecture_pdfpc_tl {~ #1}
+      % commands that would not survive the expansion into the annotation become their plain text;
+      % a parenthesis is escaped, so that an unbalanced one cannot end the string of the annotation
+      \regex_replace_all:nnN { \c{ihs} \cB. (.*?) \cE. } { \1 } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \c{textbackslash} \s* } { \cO\\ \cO\\ } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \c{\&} } { \cO\& } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \c{\#} } { \cO\# } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { ([\(\)]) } { \cO\\ \1 } \l__lecture_pdfpc_tl
+      % pdfpc renders markdown: the main message in bold, then the points as a list, then one paragraph per block
+      % the question that leads in, in italics above the main message
+      \regex_replace_once:nnN { \s TRANSITION : \s (.*?) (\s (?: MAIN | POINT | SUB | NEXT | TIP | ASK | SHOW | EXTRA | DETOUR | ANECDOTE | GAG | READ | WHY\ IT\ MATTERS ) : | \Z ) }
+         { _\1_ \c{\\} \2 } \l__lecture_pdfpc_tl
+      \regex_replace_once:nnN { \s MAIN : \s (.*?) (\s (?: POINT | SUB | NEXT | TIP | ASK | SHOW | EXTRA | DETOUR | ANECDOTE | GAG | READ | WHY\ IT\ MATTERS ) : | \Z ) }
+         { **\1** \c{\\} \2 } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s POINT : \s } { \c{\\}-\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s SUB : \s } { \c{\\}\ \ \ \ -\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s ASK : \s } { \c{\\}\c{\\}**Ask:**\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s SHOW : \s } { \c{\\}\c{\\}**Show:**\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s TIP : \s } { \c{\\}\c{\\}Tip:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s EXTRA : \s } { \c{\\}\c{\\}Extra:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s WHY\ IT\ MATTERS : \s } { \c{\\}\c{\\}Why\ it\ matters:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s DETOUR : \s } { \c{\\}\c{\\}**Detour:**\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s ANECDOTE : \s } { \c{\\}\c{\\}Anecdote:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s GAG : \s } { \c{\\}\c{\\}Gag:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s NEXT : \s } { \c{\\}\c{\\}Next:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s READ : \s } { \c{\\}\c{\\}Read:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s ANSWER : \s } { \c{\\}\c{\\}Answer:\  } \l__lecture_pdfpc_tl
+      \regex_replace_all:nnN { \s SOURCE : \s } { \c{\\}Source:\  } \l__lecture_pdfpc_tl
+      \exp_args:NV \LecturePdfpcAnnot \l__lecture_pdfpc_tl
+   }
+\ExplSyntaxOff
+% the note pages themselves, beside every slide
+\input{setup/notes}
+\fi
+\catcode`\@=\LectureAtCatcode

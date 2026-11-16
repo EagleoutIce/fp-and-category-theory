@@ -1,0 +1,2383 @@
+% Interim lecture 3.5: category theory and the abstractions of Haskell's Prelude
+% (the former content, "Lists, Folds, and a Look Under the Hood", is kept in git history)
+% Build: make anim-category-theory-abstractions.pdf noanim-category-theory-abstractions.pdf
+% Needs ghc on the PATH (or stack's ghc): the examples run through GHCi while compiling,
+% and biber for the bibliography (references.bib). Facts and sources: research/research-notes.md
+\usepackage{emoji}
+\usepackage{booktabs}
+\usepackage[tikz]{ocgx2}% PDF layers for the explanations of words, see \Term
+\RequirePackage{magic-haskell-ghc}% the GHC integration, answers are computed at build time
+\mhsLinks[base]{Data.Void}{Void,absurd}% not in the default links
+\usetikzlibrary{fadings,arrows.meta,positioning,overlay-beamer-styles,cd,calc,fit,shapes.callouts,shadows.blur}
+
+\usepackage[style=numeric,sorting=nyt,defernumbers=true,backend=biber,maxbibnames=4,maxcitenames=2]{biblatex}
+\addbibresource{references.bib}
+% a DOI is enough, the URL would only repeat it
+\AtEveryBibitem{\iffieldundef{doi}{}{\clearfield{url}}}
+% one flowing entry instead of the theme's line per block; the title links to the DOI (or URL) itself
+\AtBeginDocument{%
+   \DeclareFieldFormat{doi}{\href{https://doi.org/#1}{\nolinkurl{doi:#1}}}%
+   \DeclareFieldFormat{url}{\url{#1}}%
+   \newbibmacro{linkedtitle}{\printtext{\color{CT}%
+      \iffieldundef{doi}{\iffieldundef{url}{\printfield{title}}{\href{\thefield{url}}{\printfield{title}}}}%
+         {\href{https://doi.org/\thefield{doi}}{\printfield{title}}}}}%
+   \DeclareBibliographyDriver{fpref}{%
+      \usebibmacro{bibindex}\usebibmacro{begentry}%
+      \usebibmacro{author/editor}\setunit{\labelnamepunct}%
+      \usebibmacro{linkedtitle}\setunit{\addperiod\space}%
+      \printtext{\color{Mid}\printfield{journaltitle}\printfield{booktitle}}\setunit{\addcomma\space}%
+      \printfield{year}%
+      \usebibmacro{finentry}}%
+   \DeclareBibliographyAlias{article}{fpref}\DeclareBibliographyAlias{book}{fpref}%
+   \DeclareBibliographyAlias{incollection}{fpref}\DeclareBibliographyAlias{inproceedings}{fpref}%
+   \DeclareBibliographyAlias{online}{fpref}\DeclareBibliographyAlias{misc}{fpref}}
+\AtEveryBibitem{\clearfield{urlyear}\clearfield{urlmonth}\clearfield{urlday}\clearfield{isbn}\clearfield{issn}\clearfield{note}\clearfield{pages}\clearlist{location}}
+
+\title{Categorical Abstractions}
+\date{November \nth{16}, 2026}
+\license[]{All rights reserved}
+
+\makeatletter
+\btdl@bibliography@false
+% the theme's fullwidth only grows to the left; this one is centered on the page
+% a frame that fills the page from the left (fullwidth, or \CitesInRow) lists its citations in one row instead
+\newif\ifFullFrame
+\newcommand\CitesInRow{\global\FullFrametrue}
+\renewenvironment{fullwidth}{\global\FullFrametrue\begingroup\leavevmode\hspace*{\dimexpr 8mm-\btdl@leftindent-\beamer@leftmargin\relax}\fboxsep\z@
+   \minipage{\dimexpr\paperwidth-16mm\relax}}{\endminipage\endgroup}% the references have frames of their own, not the end page
+
+% citations as in the r-statistics lecture: a gray mark in the text, and the cited works of a frame are
+% listed above its footer (a frame without citations lists nothing)
+% \supercite[chapter]{key}: the chapter goes to the listing above the footer, the mark stays short
+\newcommand\AddCitePost[2]{\ifcsdef{citepost@#2}{\csgappto{citepost@#2}{, #1}}{\csgdef{citepost@#2}{#1}}}
+\RenewDocumentCommand\supercite{o m}{\IfValueT{#1}{\AddCitePost{#1}{#2}}\textsuperscript{\smash{\hbox{\color{gray}\cite{#2}}}}}
+\newcommand\ClearCitePost[1]{\expandafter\global\expandafter\let\csname citepost@#1\endcsname\undefined}
+\renewcommand*\multicitedelim{\addcomma}
+\newif\ifListingCites
+\def\FrameCites{}
+\AtEveryCitekey{\ifListingCites\else
+   \edef\@citekey{\thefield{entrykey}}%
+   \xifinlist{\@citekey}\FrameCites{}{\expandafter\listgadd\expandafter\FrameCites\expandafter{\@citekey}}\fi}
+\newbibmacro{footlink}[1]{%
+   \iffieldundef{doi}{\iffieldundef{url}{\bibhyperref{#1}}{\href{\thefield{url}}{#1}}}{\href{https://doi.org/\thefield{doi}}{#1}}}
+\DeclareCiteCommand{\FootCite}{}{%
+   \usebibmacro{footlink}{\FootCiteBox{\mbox{\mkbibbrackets{\printfield{labelnumber}}\addnbspace
+   \printnames{labelname}}\setunit{\addspace}\printfield{year}%
+   \ifcsdef{citepost@\thefield{entrykey}}{, \csuse{citepost@\thefield{entrykey}}}{}}}}{}{}
+\let\FootCiteBox\mbox
+\newcommand\FootCiteItem[1]{\FootCite{#1}\hskip 1.2em\relax}
+% a frame that leaves the left column free stacks its citations there, one per line, ending above the footer
+\newcommand\FootCiteLine[1]{\FootCite{#1}\par}
+\def\FrameCredits{}
+\addtobeamertemplate{footline}{%
+   \ifboolexpr{test {\ifdefempty\FrameCites} and test {\ifdefempty\FrameCredits}}{}{%
+      \begin{tikzpicture}[overlay,remember picture]
+         \ifFullFrame
+         \node[anchor=south west,font=\tiny,text=gray,inner sep=0pt,text width=14cm,align=left]
+            at([shift={(7mm,7.5mm)}]current page.south west) {\ListingCitestrue\forlistloop\FootCiteItem\FrameCites\FrameCredits};
+         \else
+         \node[anchor=south west,font=\tiny,text=gray,inner sep=0pt,text width=\btdl@leftindent-9mm,align=left]
+            at([shift={(7mm,7.5mm)}]current page.south west) {\ListingCitestrue\let\FootCiteBox\@firstofone
+               \setlength\parskip{1.6pt}\raggedright\hyphenpenalty=10000\exhyphenpenalty=10000\everypar{\hangindent=.8em\hangafter=1 }\forlistloop\FootCiteLine\FrameCites\FrameCredits};
+         \fi
+      \end{tikzpicture}}%
+   \forlistloop\ClearCitePost\FrameCites\gdef\FrameCites{}\gdef\FrameCredits{}\global\FullFramefalse}{}
+\defbibheading{compact}[]{}
+\renewcommand*{\bibfont}{\tiny}
+\setlength{\bibitemsep}{1pt}
+% the list of references as wide as a fullwidth frame: the numeric list of biblatex, with both margins moved out
+\defbibenvironment{bibliography}
+   {\list{\printtext[labelnumberwidth]{\printfield{labelprefix}\printfield{labelnumber}}}
+      {\setlength{\labelwidth}{\labelnumberwidth}\setlength{\labelsep}{\biblabelsep}%
+       \setlength{\leftmargin}{\dimexpr\labelwidth+\labelsep+8mm-\btdl@leftindent-\beamer@leftmargin\relax}%
+       \setlength{\rightmargin}{\dimexpr 8mm-\beamer@rightmargin\relax}%
+       \setlength{\itemsep}{\bibitemsep}\setlength{\parsep}{\bibparsep}}%
+    \renewcommand*{\makelabel}[1]{\hss##1}}
+   {\endlist}
+   {\item}
+% \References: all entries in one list
+\newcommand\References{%
+   \begin{frame}[allowframebreaks,t]{References}
+      \setbeamercolor{bibliography item}{fg=black}%
+      \setbeamercolor{bibliography entry author}{fg=black}%
+      \setbeamercolor{bibliography entry title}{fg=black}%
+      \setbeamercolor{bibliography entry location}{fg=gray}%
+      \setbeamercolor{bibliography entry note}{fg=gray}%
+      \printbibliography[heading=compact]
+   \end{frame}%
+}
+
+% portraits as in the r-statistics lecture, in grayscale like every picture of this deck
+\tikzfading[name=rectangular fade,inner color=transparent!0,middle color=transparent!0,outer color=transparent!100]
+% \Person{key}{name}{years}{file}{credit}{url}{x/y/size}: x and y locate the face in the image, size is
+% the width of the visible part, all as fractions of the image
+\newcommand\Person[7]{%
+   \csdef{person@#1@name}{#2}\csdef{person@#1@years}{#3}\csdef{person@#1@file}{#4}%
+   \csdef{person@#1@credit}{#5}\csdef{person@#1@url}{#6}\csdef{person@#1@face}{#7}%
+}
+\newsavebox\PortraitImage
+\newlength\PortraitWidth
+\def\PortraitFace#1/#2/#3\relax{\def\FaceX{#1}\def\FaceY{#2}\def\FaceSize{#3}}
+% \ShowPerson[width]{key}<overlay>[shift to the left]: the face in the upper right corner, faded at its edges,
+% with name, years, and the license of the picture to its left; the starred form puts them below the face,
+% for two faces next to a long title
+\NewDocumentCommand\ShowPerson{s O{10.5mm} m D<>{1-} O{0mm}}{%
+   \IfBooleanTF{#1}{\def\PersonBelow{1}}{\def\PersonBelow{0}}\ShowPersonAt{#2}{#3}{#4}{#5}}
+\newcommand\ShowPersonAt[4]{%
+   \expandafter\expandafter\expandafter\PortraitFace\csname person@#2@face\endcsname\relax
+   \setlength\PortraitWidth{#1}%
+   \pgfmathsetlengthmacro\ImageWidth{\PortraitWidth/\FaceSize}%
+   \savebox\PortraitImage{\includegraphics[width=\ImageWidth]{\csuse{person@#2@file}}}%
+   \pgfmathsetmacro\PortraitCover{max(1,\PortraitWidth/\the\wd\PortraitImage,1.25*\PortraitWidth/\the\ht\PortraitImage)}%
+   \savebox\PortraitImage{\scalebox{\PortraitCover}{\usebox\PortraitImage}}%
+   \pgfmathsetlengthmacro\FaceShiftX{min(0,max(\PortraitWidth-\the\wd\PortraitImage,.5*\PortraitWidth-\FaceX*\the\wd\PortraitImage))}%
+   \pgfmathsetlengthmacro\FaceShiftY{max(0,min(\the\ht\PortraitImage-1.25*\PortraitWidth,\FaceY*\the\ht\PortraitImage-.625*\PortraitWidth))}%
+   \begin{tikzpicture}[overlay,remember picture]
+      \coordinate (face) at([shift={(-2.5mm-#4,-2.5mm)}]current page.north east);
+      \begin{scope}[visible on=<#3>]
+         \coordinate (face south west) at([shift={(-\PortraitWidth,-1.25\PortraitWidth)}]face);
+         \foreach \o in {1,.5}
+            \path[path picture={\node[inner sep=0pt,anchor=north west]
+                  at([shift={(\FaceShiftX,\FaceShiftY)}]path picture bounding box.north west) {\usebox\PortraitImage};},
+               rounded corners=8pt,path fading=rectangular fade,draw,thin,white,opacity=\o]
+               (face south west) rectangle (face);
+         \ifnum\PersonBelow=1
+         \node[anchor=north east,align=right,font=\tiny,inner sep=0pt]
+            at([shift={(0mm,-1.25\PortraitWidth-1mm)}]face) {%
+            \csuse{person@#2@name}\ifcsempty{person@#2@years}{}{\enspace{\color{Mid}\csuse{person@#2@years}}}\\
+            {\color{Mid}\href{\csuse{person@#2@url}}{\csuse{person@#2@credit}}}};
+         \else
+         \node[anchor=north east,align=right,font=\scriptsize,inner sep=0pt]
+            at([shift={(-\PortraitWidth-2mm,-1mm)}]face) {%
+            \csuse{person@#2@name}\ifcsempty{person@#2@years}{}{\\{\color{Mid}\csuse{person@#2@years}}}\\
+            {\tiny\color{Mid}\href{\csuse{person@#2@url}}{\csuse{person@#2@credit}}}};
+         \fi
+      \end{scope}
+   \end{tikzpicture}%
+}
+\Person{eilenberg}{Samuel Eilenberg}{1913--1998}{people/eilenberg-gray.jpg}{K.\ Jacobs, CC BY-SA 2.0 DE}{https://commons.wikimedia.org/wiki/File:Samuel_Eilenberg_MFO.jpeg}{.47/.3/.5}
+\Person{maclane}{Saunders Mac Lane}{1909--2005}{people/maclane-gray.jpg}{K.\ Jacobs, CC BY-SA 2.0 DE}{https://commons.wikimedia.org/wiki/File:Saunders_MacLane.jpg}{.5/.42/.8}
+\Person{moggi}{Eugenio Moggi}{}{people/moggi-gray.jpg}{A.\ Bauer, CC BY-SA 2.5 SI}{https://commons.wikimedia.org/wiki/File:Eugenio_Moggi.jpg}{.39/.25/.22}
+\Person{kan}{Daniel Kan}{1927--2013}{people/kan-gray.jpg}{Jonah Kan, CC BY-SA 3.0}{https://commons.wikimedia.org/wiki/File:Daniel_Kan.JPG}{.55/.23/.35}
+\Person{curry}{Haskell B.\ Curry}{1900--1982}{people/curry-gray.jpg}{public domain (US)}{https://commons.wikimedia.org/wiki/File:Haskell_Curry_-_Harvard_College_Class_Album_yearbook_1920.jpg}{.5/.4/.85}
+\Person{wadler}{Philip Wadler}{born 1956}{people/wadler-gray.jpg}{Clq, CC BY 3.0}{https://commons.wikimedia.org/wiki/File:Wadler2.JPG}{.51/.19/.3}
+\Person{peytonjones}{Simon Peyton Jones}{born 1958}{people/peytonjones-gray.jpg}{Duncan Hull, CC BY-SA 4.0}{https://commons.wikimedia.org/wiki/File:Professor_Simon_Peyton_Jones_FRS_(cropped).jpg}{.5/.34/.5}
+\Person{howard}{William A.\ Howard}{1926--2026}{people/howard-gray.jpg}{A.\ Bauer, CC BY-SA 2.5 SI}{https://commons.wikimedia.org/wiki/File:William_Alvin_Howard_May_2004.jpg}{.56/.37/.22}
+\Person{lambek}{Joachim Lambek}{1922--2014}{people/lambek-gray.jpg}{A.\ Bauer, CC BY-SA 2.5 SI}{https://commons.wikimedia.org/wiki/File:Lambek_Joachim.jpg}{.48/.33/.45}
+\Person{kleisli}{Heinrich Kleisli}{1930--2011}{people/kleisli-gray.jpg}{K.\ Jacobs, GFDL}{https://commons.wikimedia.org/wiki/File:Heinrich-Kleisli-1987.jpeg}{.47/.42/.55}
+\Person{benabou}{Jean B\'enabou}{1932--2022}{people/benabou-gray.jpg}{F.\ Nicolas, CC BY-SA 4.0}{https://commons.wikimedia.org/wiki/File:Jean_B\%C3\%A9nabou_2015.jpg}{.6/.3/.32}
+\Person{hudak}{Paul Hudak}{1952--2015}{people/hudak-gray.jpg}{J.\ Peterson, CC BY 2.0}{https://commons.wikimedia.org/wiki/File:Paul_Hudak_in_2013.jpg}{.5/.5/.4}
+\Person{lawvere}{F.\ William Lawvere}{1937--2023}{people/lawvere-gray.jpg}{A.\ Bauer, CC BY-SA 2.5}{https://commons.wikimedia.org/wiki/File:William_Lawvere.jpg}{.43/.25/.32}
+
+% colors carry one meaning throughout: blue is the first arrow and the source (types), orange the second arrow
+% and the target (functors), green a third arrow, purple whatever results (composite, universal arrow, functor,
+% natural transformation); the rest is black, one gray, and one light fill;
+% every arrow ends in a kite and has round caps; everything rounded has the same radius
+\colorlet{Ink}{black}
+% Frame key [optional]: an excursion, to read rather than to present. The full builds show it on a gray page with a
+% badge in its top left corner; the short builds (\LectureShort defined, see the makefile) leave it out. Beamer
+% leaves out a frame whose overlay specification is 0 (in the handout as well), so the patch sets it after the keys; a left out frame keeps no
+% number, so the numbers of the others stay consecutive. Every frame starts on the usual background.
+\makeatletter
+\colorlet{OptionalGray}{gray!9}
+\newif\ifLeaveOutFrame
+\newif\ifExcursionFrame
+\newif\ifAppliedFrame
+\patchcmd\beamer@@@@frame{\def\beamer@frametemplate{}}
+   {\def\beamer@frametemplate{\global\ExcursionFramefalse\global\AppliedFramefalse}}{}{\PackageError{lecture}{Patch of the frame start failed}{}}
+\patchcmd\beamer@@@@frame{\gdef\beamer@whichframes{#1}}
+   {\gdef\beamer@whichframes{#1}\ifLeaveOutFrame\global\LeaveOutFramefalse\gdef\beamer@whichframes{0| handout:0}\beamer@noframenumberingtrue\fi}
+   {}{\PackageError{lecture}{Patch of the frame start failed}{}}
+\define@key{beamerframe}{optional}[true]{\ifdefined\LectureShort\global\LeaveOutFrametrue
+   \else\appto\beamer@frametemplate{\global\ExcursionFrametrue}\fi}
+% Frame key [applied]: the ideas at work in everyday code, on a slightly tinted page with a small badge
+\define@key{beamerframe}{applied}[true]{\appto\beamer@frametemplate{\global\AppliedFrametrue}}
+% the gray page is drawn by the background template, so the theme's canvas color stays untouched
+\setbeamertemplate{background}{\ifExcursionFrame\begin{tikzpicture}[overlay,remember picture]
+   \fill[OptionalGray] (current page.south west) rectangle (current page.north east);
+   \node[anchor=north west,fill=Mid,text=white,font=\tiny\bfseries,rounded corners=1.2pt,inner xsep=3pt,inner ysep=1.5pt]
+      at([shift={(9mm,-2.5mm)}]current page.north west) {\faCompass~Excursion};
+\end{tikzpicture}\else\ifAppliedFrame\begin{tikzpicture}[overlay,remember picture]
+   \fill[ArrG!5] (current page.south west) rectangle (current page.north east);
+\end{tikzpicture}\fi\fi}
+\makeatother
+% the ring of composition, visibly different from a dot of multiplication
+\let\oldcirc\circ
+\renewcommand\circ{\mathbin{\vcenter{\hbox{\scalebox{.5}{\(\bigcirc\)}}}}}
+\colorlet{Mid}{gray}
+% \Term{word}{explanation}: a word with a dotted underline; a click on it shows a short explanation at the
+% bottom of the slide (a PDF layer, hidden at the start and never printed), a click on the box hides it again
+\newcounter{TermId}
+\global\let\TermPopups\empty
+\newcommand\Term[2]{\stepcounter{TermId}\edef\TermRef{term\theTermId}%
+   \switchocg{\TermRef}{\tikz[baseline=(w.base)]{\node[inner xsep=1.2pt,inner ysep=.6pt,fill=CT!9,rounded corners=1.5pt] (w) {#1};
+      \draw[densely dotted,line width=.6pt,CT!60] ([xshift=1.2pt,yshift=-1.3pt]w.base west) -- ([xshift=-1.2pt,yshift=-1.3pt]w.base east);}}%
+   \xappto\TermPopups{\noexpand\TermPopup{\TermRef}{\unexpanded{#1}}{\unexpanded{#2}}}}
+% the boxes are drawn with the footline, after the content of the page, so nothing covers them
+\newcommand\TermPopup[3]{\begin{tikzpicture}[overlay,remember picture]
+      \begin{scope}[ocg={name=#1,ref=#1,status=off,opts={printocg=never}}]
+         \node[anchor=south,fill=white,draw=CT!45,line width=.8pt,rounded corners=4pt,inner sep=5pt,text width=110mm,
+            align=left,font=\footnotesize\mdseries,text=Ink,NoHyphens] at ([yshift=9mm]current page.south)
+            {\def\T##1{\mbox{\texttt{##1}}}\switchocg{#1}{\textcolor{CT}{\textbf{#2}}\enspace #3\hfill{\color{Mid}\faTimes}}};
+      \end{scope}
+   \end{tikzpicture}}
+\addtobeamertemplate{footline}{}{\TermPopups\global\let\TermPopups\empty}
+\colorlet{Wash}{@main!8}
+\colorlet{CT}{@main!80!black}% notions of category theory, composites, universal arrows
+\colorlet{ArrF}{blue}
+\colorlet{ArrG}{orange!85!black}
+\colorlet{ArrH}{green!60!black}
+\colorlet{CatC}{ArrF!12}
+\colorlet{CatD}{ArrG!12}
+\newcommand\cF[1][f]{\textcolor{ArrF}{#1}}
+\newcommand\cG[1][g]{\textcolor{ArrG}{#1}}
+\newcommand\cH[1][h]{\textcolor{ArrH}{#1}}
+\newcommand\sem[1]{[\![#1]\!]}
+\newcommand\ct[1]{\textcolor{CT}{\textbf{#1}}}
+% \Tile{position}{pictogram}{name}{text}: one idea, drawn small (as the tiles of the r-statistics lecture);
+% the pictogram is drawn in mm on an 18 x 9 field, from named nodes (PDot, PBox) joined by PArr and PLine
+\tikzset{PDot/.style={circle,fill=#1,inner sep=0pt,minimum size=1.8mm},PDot/.default=Mid,
+   PBox/.style={draw=#1,rounded corners=1pt,inner sep=0pt,minimum width=3.6mm,minimum height=4.6mm},PBox/.default=CT!70,
+   PArr/.style={-{Kite[length=1.3mm,width=1mm]},Mid,shorten >=.6pt,shorten <=.6pt},
+   PLine/.style={Mid}}
+\newsavebox\TilePic
+\def\TileWidth{31mm}
+\def\TileHeight{23mm}
+\newcommand\Tile[4]{%
+   \sbox\TilePic{\pgfinterruptpicture\tikz[x=1mm,y=1mm,line width=.7pt,line cap=round]{\path (0,0) rectangle (18,9);#2}\endpgfinterruptpicture}%
+   \node[Card=\TileWidth,minimum height=\TileHeight] (tile) at #1 {};
+   \node[anchor=north,inner sep=0pt] (tilepic) at ([yshift=-2mm]tile.north) {\usebox\TilePic};
+   \node[anchor=north,inner sep=0pt,font=\small\bfseries] (tilename) at ([yshift=-1.5mm]tilepic.south) {\strut #3};
+   \node[anchor=north,inner sep=0pt,font=\footnotesize,text width=\TileWidth-5mm,align=center,NoHyphens] at ([yshift=-.5mm]tilename.south) {\strut #4};}
+% \Mk[color]{text}: a token of a program in the color of what it is
+\newcommand\Mk[2][ArrF]{\textcolor{#1}{\textbf{\T{#2}}}}
+% \Takeaway{headline}{picture}{footer}: one message per part, centered on a page of its own: a badge, the
+% headline, the picture on a soft panel, and the footer; a penguin in a gown nods along in the corner
+% \Takeaway* is the same layout as an ordinary slide, titled without "Takeaway:"
+\NewDocumentCommand\Takeaway{s o m m m}{\begin{frame}[c]{\IfBooleanF{#1}{Takeaway: }#3}\IfValueT{#2}{\NoteRef{#2}}
+   \begin{fullwidth}\centering
+   \makebox[\linewidth][c]{\tcbox[enhanced,colback=Wash!60,colframe=Wash!60,boxrule=0pt,arc=6pt,left=5mm,right=5mm,top=3.5mm,
+      bottom=3.5mm,nobeforeafter,on line]{#4}}\par
+   \vspace{5mm}
+   {\small\color{Mid}\makebox[\linewidth][c]{\parbox{136mm}{\centering#5}}\par}
+   \end{fullwidth}
+   \begin{tikzpicture}[overlay,remember picture]
+      \begin{scope}[shift={([shift={(-1.2cm,1.35cm)}]current page.south east)},scale=.3,transform shape]
+         \Pingu[graduate,left wing wave]
+      \end{scope}
+   \end{tikzpicture}
+\end{frame}}
+% the German name of a notion, next to the English one
+\newcommand\De[1]{\enspace{\footnotesize\mdseries\color{Mid}#1}}
+% align= (ragged2e) takes \spaceskip from the font before font=, so \ttfamily nodes get half-width
+% spaces; MonoSpaces takes it from the node font
+% \DiagKey{term}: a term and its colon in a column of fixed width, so the explanations align
+\newcommand\DiagKey[1]{\makebox[21mm][l]{#1:}}
+\tikzset{Def/.style={font=\scriptsize,inner sep=1pt,align=center,MonoSpaces}}% a line under a diagram: what its letters are
+\tikzset{MonoSpaces/.style={execute at begin node={\spaceskip\fontdimen2\font\relax}}}
+\tikzset{NoHyphens/.style={execute at begin node={\hyphenpenalty=10000\exhyphenpenalty=10000\relax}},
+   Obj/.style={circle,draw=CT!45,line width=.8pt,minimum size=10mm,inner sep=0pt,fill=white,font=\small},
+   Dot/.style={circle,fill=Ink,inner sep=0pt,minimum size=1.6mm},
+   Arr/.style={-{Kite[length=1.6mm,width=1.2mm]},thick,line cap=round,Ink,shorten >=2pt,shorten <=2pt},
+   Chunk/.style={draw=CT!45,rounded corners=3pt,inner sep=3pt,fill=Wash},
+   Card/.style={rounded corners=5pt,draw=CT!30,line width=.8pt,fill=white,minimum width=#1,text width=#1-10pt,
+      minimum height=25mm,align=center,font=\footnotesize,inner sep=5pt,NoHyphens},
+   Card/.default=34mm,
+   Blob/.style={ellipse,draw=CT!40,line width=.8pt,fill=Wash,minimum width=17mm,minimum height=26mm},
+   Cls/.style={rounded corners=3pt,draw=CT!45,line width=.8pt,fill=white,inner xsep=5pt,inner ysep=2.5pt,font=\small\ttfamily},
+   Notion/.style={rounded corners=3pt,draw=CT,line width=.8pt,fill=white,text=CT,inner xsep=5pt,inner ysep=2pt,font=\small,align=center},
+   Sup/.style={-{Kite[length=1.6mm,width=1.2mm]},thick,line cap=round,Mid,shorten >=2pt,shorten <=2pt},
+   Uses/.style={thick,dash pattern=on 3pt off 2pt,line cap=round,Mid,shorten >=2pt,shorten <=2pt},
+   Link/.style={thin,line cap=round,Mid,shorten >=2pt,shorten <=2pt},
+   Box/.style={draw=CT!45,line width=.8pt,rounded corners=3pt,inner sep=2.5pt},
+   Val/.style={draw=CT!70,line width=.8pt,rounded corners=2.5pt,minimum width=6.5mm,minimum height=6mm,font=\ttfamily\small,inner sep=1pt,fill=white},
+   Lbl/.style={font=\footnotesize,text=Mid},
+   Example/.style={draw=Mid!50,dash pattern=on 2pt off 1.5pt,rounded corners=3pt,fill=white,inner sep=4pt,font=\footnotesize,text=Ink!80,align=left,MonoSpaces},
+   % a gray remark pointing at a node, and the gray instance of a diagram (universal properties)
+   Note/.style={font=\scriptsize,text=Mid,align=right,inner sep=1pt,NoHyphens},
+   NoteArr/.style={-{Kite[length=1.3mm,width=1mm]},thin,line cap=round,Mid,shorten >=1pt,shorten <=1pt},
+   EdgeNote/.style={font=\scriptsize,text=Mid!80!black,inner sep=2pt},
+   InstAt/.style={font=\scriptsize\ttfamily,text=Mid,inner sep=1pt,MonoSpaces,visible on=<5->},
+   UP/.style={node distance=12mm and 16mm,every node/.append style={font=\small\ttfamily}},
+   EL/.style={font=\footnotesize\ttfamily,inner sep=2pt},
+   Af/.style={ArrF},Ag/.style={ArrG},Ah/.style={ArrH},
+   InC/.style={draw=ArrF,text=ArrF},InD/.style={draw=ArrG,text=ArrG},
+   BlobC/.style={Blob,draw=ArrF,fill=CatC},BlobD/.style={Blob,draw=ArrG,fill=CatD},
+   Bubble/.style={rectangle callout,fill=Wash,rounded corners=4pt,font=\footnotesize,align=right,inner sep=4pt,NoHyphens},
+   Done/.style={},
+   Now/.style={fill=CT,draw=CT,text=white},
+   Later/.style={draw=Mid,text=Mid}}
+\tikzcdset{cf/.style={draw=ArrF,text=ArrF},cg/.style={draw=ArrG,text=ArrG},ch/.style={draw=ArrH,text=ArrH},cc/.style={draw=CT,text=CT}}
+\tikzcdset{arrow style=tikz,arrows={-{Kite[length=1.6mm,width=1.2mm]},thick,line cap=round,draw=Ink,shorten=2.5pt},labels={font=\footnotesize,inner sep=2.5pt}}
+% the objects of a diagram: a box as the classes (Cls), or the circle Obj for single letters; empty cells stay empty
+\tikzset{Ob/.style={rounded corners=3pt,draw=CT!45,line width=.8pt,fill=white,inner xsep=4pt,inner ysep=2.5pt,minimum height=6.5mm,minimum width=7mm}}
+\tikzcdset{every diagram/.append style={cells={nodes={Ob}},nodes in empty cells=false}}
+
+% small pictures inside text and cards: a value, and a container around values
+\newcommand\V[1]{\tikz[baseline=(v.base)]\node[Val,minimum width=4.6mm,minimum height=4.4mm,font=\ttfamily\scriptsize] (v) {\strut#1};}
+\newcommand\C[1]{\tikz[baseline=(c.base)]\node[Box,inner sep=1.4pt] (c) {#1};}
+
+% a container with values in a picture: \Container{name}{position}{values}{number of values}
+\newcommand\Container[4]{%
+   \foreach \v [count=\i] in {#3} \node[Val] (#1\i) at ($#2+(\i*.9,0)$) {\v};
+   \node[Box,fit=(#11)(#1#4)] (#1) {};}
+
+% \MonoidPanel{name}{fill}{title color}{title}{M x M}{M}{unit}{mu}{eta}: one monoid, mu and eta into M
+\newcommand\MonoidPanel[9]{%
+   \node[rounded corners=5pt,fill=#2,minimum width=62mm,minimum height=36mm] (#1) {};
+   \node[font=\small\bfseries,text=#3,anchor=north] at ([yshift=-1.5mm]#1.north) {#4};
+   \node[Ob,font=\small] (#1mm) at ([shift={(-16mm,2mm)}]#1.center) {#5};
+   \node[Ob,font=\small] (#1m) at ([shift={(16mm,2mm)}]#1.center) {#6};
+   \node[Ob,font=\small] (#1u) at ([yshift=-12mm]#1mm) {#7};
+   \draw[MArr,CT] (#1mm) -- node[above,font=\footnotesize] {\(\mu\): #8} (#1m);
+   \draw[MArr,CT] (#1u) -- node[below right=1pt,pos=.55,font=\footnotesize] {\(\eta\): #9} (#1m);}
+% an arrow of a monoid panel; among functors it is a natural transformation, drawn double
+\tikzset{MArr/.style={Arr},NatArr/.style={MArr/.style={-{Implies},double,double distance=1.4pt,line cap=round}}}
+% the laws of a frame: \Laws{...} centered in a gray box
+\newcommand\Laws[1]{\tikz\node[rounded corners=5pt,fill=Wash,inner sep=5pt,align=center,font=\small,NoHyphens,text width=\linewidth-14pt] {#1};}
+% By-the-way remarks sit small in the lower right corner, outside the flow of the frame, side by side in one
+% row (the first at the right) when a frame has several; each is a link: \Java[position]{url}{text}
+% about Java (to its documentation), \Lam[position]{url}{text} a back reference to the lambda-calculus,
+% where the students met the idea first; the position (x,y from the corner) gives way to a corner penguin
+% (\PinguNote). An empty url leaves the tag unlinked, for a text with links of its own.
+\newdimen\BtwUsed
+\newdimen\BtwWidth
+\AddToHook{shipout/before}{\global\BtwUsed=0pt\relax}
+\tikzset{JavaNote/.style={rounded corners=1.5pt,fill=ArrG!5,inner xsep=2pt,inner ysep=1pt,align=right,
+   font=\tiny,text=Ink!55,NoHyphens,MonoSpaces}}
+\newcommand\BtwLink[2]{\ifblank{#1}{#2}{\href{#1}{#2}}}
+% #1 position or -NoValue-, #2 overlay (ignored: a remark is there from the first overlay on, it never adds a step), #3 badge,
+% #4 fill, #5 url, #6 text
+\newcommand\ByTheWay[6]{\begin{tikzpicture}[overlay,remember picture]
+   \IfValueTF{#1}{\coordinate (btw) at ([shift={(#1)}]current page.south east);}
+      {\coordinate (btw) at ([shift={(-4mm-\BtwUsed,9.5mm)}]current page.south east);}
+   \node[JavaNote,fill=#4,anchor=south east] (btwn) at (btw) {\BtwLink{#5}{#3\enspace #6}};
+   \IfValueF{#1}{\pgfextractx{\BtwWidth}{\pgfpointdiff{\pgfpointanchor{btwn}{west}}{\pgfpointanchor{btwn}{east}}}%
+      \global\advance\BtwUsed by \dimexpr\BtwWidth+1.5mm\relax}
+\end{tikzpicture}}
+\NewDocumentCommand\Java{o D<>{1-} m m}{\ByTheWay{#1}{#2}{\textcolor{ArrG!70}{\faCoffee}}{ArrG!5}{#3}{#4}}
+\NewDocumentCommand\HsLib{o D<>{1-} m m}{\ByTheWay{#1}{#2}{\textcolor{ArrF}{\textbf{Haskell}}}{ArrF!6}{#3}{#4}}
+\NewDocumentCommand\Lam{o D<>{1-} m m}{\ByTheWay{#1}{#2}{\textcolor{CT}{\textbf{\(\lambda\)-calculus}}}{CT!6}{#3}{#4}}
+% \Watch<overlay>{url}{title}: a video to watch after the lecture, at the bottom of the left sidebar (where the
+% citations are; a frame with citations needs another place)
+\NewDocumentCommand\Watch{D<>{1-} m m}{\begin{tikzpicture}[overlay,remember picture]
+   \node<#1>[anchor=south west,text width=21mm,align=left,font=\tiny,text=Ink!60,inner sep=0pt,NoHyphens]
+      at ([shift={(4.5mm,7mm)}]current page.south west)
+      {\textcolor{ArrH}{\faYoutubePlay}~\textbf{watch}\\[.3ex]\link{#2}{#3}};
+\end{tikzpicture}}
+
+\newcommand\Pingu[1][]{\pingu[body type=legacy,eyes shiny,#1]}
+% \PinguSays[penguin options]<overlay>{remark}: a small penguin in the upper right corner, its wing raised; the
+% bubble stands to its left, its lower edge at the height of the penguin's eyes, and its tip ends at the side of its head
+\NewDocumentCommand\PinguSays{O{} D<>{1-} m}{%
+   \begin{tikzpicture}[overlay,remember picture]\only<#2>{%
+      \begin{scope}
+         \begin{scope}[shift={([shift={(-1.25cm,-1.5cm)}]current page.north east)},scale=.3,transform shape]
+            \Pingu[right wing wave,name=pingusays,#1]
+         \end{scope}
+         \node[Bubble,anchor=south east,callout absolute pointer={([shift={(-2.9mm,.4mm)}]pingusays-bill)},callout pointer width=2.5mm]
+            at ([shift={(-.85cm,.1cm)}]pingusays-bill) {#3};
+      \end{scope}
+   }\end{tikzpicture}}
+% \PinguNote<overlay>{remark}: a small side remark such as a version, from a small penguin in the lower right corner
+\NewDocumentCommand\PinguNote{D<>{1-} m}{%
+   \begin{tikzpicture}[overlay,remember picture]\only<#1>{%
+      \begin{scope}
+         \begin{scope}[shift={([shift={(-1.05cm,1.05cm)}]current page.south east)},scale=.22,transform shape]
+            \Pingu[right wing wave,name=pingunote]
+         \end{scope}
+         \node[Bubble,font=\scriptsize,anchor=south east,callout absolute pointer={([shift={(-2.2mm,.3mm)}]pingunote-bill)},callout pointer width=2mm]
+            at ([shift={(-.65cm,.08cm)}]pingunote-bill) {#2};
+      \end{scope}
+   }\end{tikzpicture}}
+% \PinguNoteLeft<overlay>{remark}: the same, from a penguin in the lower left, above the citations
+\NewDocumentCommand\PinguNoteLeft{D<>{1-} m}{%
+   \begin{tikzpicture}[overlay,remember picture]\only<#1>{%
+      \begin{scope}
+         \begin{scope}[shift={([shift={(1.05cm,1.9cm)}]current page.south west)},scale=.22,transform shape]
+            \Pingu[left wing wave,name=pingunoteleft]
+         \end{scope}
+         \node[Bubble,font=\scriptsize,align=left,anchor=south west,callout absolute pointer={([shift={(.3mm,1.6mm)}]pingunoteleft-bill)},callout pointer width=2mm]
+            at ([shift={(-.55cm,.75cm)}]pingunoteleft-bill) {#2};
+      \end{scope}
+   }\end{tikzpicture}}
+% \SectionPage[penguin options]{number}{title}{subtitle}: a section opener in the style of the SQA lecture
+\newcommand\SectionPage[4][right wing wave]{%
+   \begin{frame}[plain,c]
+      \begin{tikzpicture}[overlay,remember picture]
+         \node[anchor=west,font=\Huge\bfseries] (st) at ([shift={(2cm,.3cm)}]current page.west) {#2.\enspace #3};
+         \node[anchor=north west,font=\large,text=Mid] at ([yshift=-1mm]st.south west) {#4};
+         \begin{scope}[shift={([shift={(-2.4cm,-1.4cm)}]current page.east)},scale=.8,transform shape]
+            \Pingu[#1]
+         \end{scope}
+      \end{tikzpicture}
+   \end{frame}}
+
+% the class hierarchy in small, in the upper right corner: \HierMap[also]{step}, step 1 to 7 is the current class
+% (also, if given, a second current one, done before or not)
+% (Semigroup, Monoid, Functor, Foldable, Applicative, Traversable, Monad; Foldable and Traversable are in the backup,
+% not in the map); one row, read from left to right
+% \IfLong{material}: only in the long version, not in the short one
+\newcommand\IfLong[1]{\ifdefined\LectureShort\else#1\fi}
+\newcount\HsStep\newcount\HsAlso
+\tikzset{HMini/.style={font=\fontsize{5.5}{6.5}\selectfont\ttfamily,MonoSpaces,text height=1.4mm,text depth=.4mm,inner xsep=1.2pt,inner ysep=.7pt,rounded corners=1.5pt,line width=.45pt},
+   HArr/.style={-{Kite[length=.8mm,width=.7mm]},line cap=round,Mid,line width=.45pt,shorten >=.3pt,shorten <=.3pt},
+   HGroup/.style={draw=Mid,dash pattern=on 1.5pt off 1pt,line width=.5pt,rounded corners=3pt,inner sep=1.8pt},
+   HLabel/.style={font=\fontsize{5.5}{6.5}\selectfont,text=Mid,inner sep=0pt}}
+% \HNode{step}{name}{class}: a class in the header, done, current, or later than the step
+\newcommand\HNode[3]{\ifnum#1=\HsAlso\node[Cls,HMini,Now] (#2) {#3};\else\ifnum#1>\HsStep\node[Cls,HMini,Later] (#2) {#3};\else\ifnum#1=\HsStep\node[Cls,HMini,Now] (#2) {#3};\else\node[Cls,HMini] (#2) {#3};\fi\fi\fi}
+% the header is a matrix pinned to the upper right page corner: Foldable over Functor, Traversable over Applicative
+\newcommand\HierMap[2][0]{\HsStep=#2\relax\HsAlso=#1\relax
+   \begin{tikzpicture}[overlay,remember picture]
+      \matrix[ampersand replacement=\&,column sep=2mm,row sep=3.2mm,anchor=north east] (hm) at ([shift={(-4mm,-3mm)}]current page.north east) {
+         \HNode{1}{hsg}{Semigroup} \& \HNode{2}{hmo}{Monoid} \&[2.5mm] \HNode{3}{hfu}{Functor} \& \HNode{5}{hap}{Applicative} \& \HNode{7}{hmn}{Monad} \\
+      };
+      \foreach \a/\b in {hsg/hmo,hfu/hap,hap/hmn} \draw[HArr] (\a) -- (\b);
+      \node[HGroup,fit=(hsg)(hmo)] (g1) {};
+      \node[HGroup,fit=(hfu)(hap)(hmn)] (g2) {};
+      \node[HLabel,anchor=north west] at ([yshift=-.8mm]g1.south west) {on types};
+      \node[HLabel,anchor=north east] at ([yshift=-.8mm]g2.south east) {on type constructors};
+   \end{tikzpicture}}
+
+% \HistoryLane{y in cm}{name}: one line of a timeline; \HistoryStop{y}{i}{n}{side}{year}{what}{who}: its event i
+% of n, evenly spaced (stations, not a time axis); side 1 puts the label above, -1 below; what may break with \\
+\newcommand\HistoryLane[2]{%
+   \draw[history-line] (0,#1cm) -- (\HistoryWidth,#1cm);
+   \node[history-name,anchor=east] at (-2mm,#1cm) {#2};}
+\newcommand\HistoryStop[7]{%
+   \pgfmathsetlengthmacro\HistX{6mm+(\HistoryWidth-12mm)*(#2-1)/max(#3-1,1)}%
+   \draw[history-event] (\HistX,#1cm) -- ++(0,#4*.32);
+   \node[history-box,anchor=\ifnum#4>0 south\else north\fi,align=center] at ([yshift=#4*.32cm]\HistX,#1cm)
+      {\textbf{#5}: #6\\[-.2ex]\color{Mid}\tiny #7};}
+\def\HistoryWidth{104mm}
+
+\mhsGhcImport{Data.Semigroup,Data.Monoid,Data.Foldable,Data.List,Data.Ord,Data.Maybe,Data.Functor.Const,Data.Functor.Identity,Control.Monad,Text.Read}
+\lstfs[1]{9}% the listings of this deck are a little smaller than the default
+\mhsLensOn% type signatures in files are small and gray, as a code lens
+% a small play button beside every Haskell file opens it in Compiler Explorer, which runs its main (lines play>)
+\mhsPlayOn
+% the button as in the R lecture: magic-r's filled disc with a small label, above the first line at the right
+\mhsPlayStyle{filled}
+\renewcommand*\mhsPlayLabel{}
+\renewcommand*\mhsPlaySize{.9em}
+\renewcommand\mhsPlaceButton[1]{\hfill\llap{\scriptsize\raisebox{1.25em}{#1}}}
+% the font would join the >= in >>= into one glyph, and => in >=> into a double arrow
+\mhsLigature{>>=}{\makebox[3\fontcharwd\font`x]{>\kern-.12em>\kern.02em\relax=}}
+\mhsLigature{>=>}{\makebox[3\fontcharwd\font`x]{>\kern.02em\relax=\kern.02em\relax>}}
+\setbeamercovered{invisible}% uncovered steps hide pictures as well, not only text
+% a GHCi session stands apart from the slide: a light box, labeled GHCi on its upper edge; the prompt is gray,
+% the input highlighted as Haskell, and the answer of GHCi in the color of results, so input and output never blur
+\colorlet{GhciOut}{@main!75!magenta!80!white}
+\def\GhciAnswer{\color{GhciOut}}
+\mhsGhcSessionSetup{ask,listing={xleftmargin=0pt}}% ask: the input first, its answer on the next overlay
+\mode<handout>{\mhsGhcSessionSetup{animate=false,listing={xleftmargin=0pt}}}% the handout shows the finished sessions
+% the language of the sessions as magic-haskell defines it, only the answers ('out>') get a style of their own
+\makeatletter
+\lstdefinelanguage{lGHCi}{
+  language=lMagicHaskell,
+  morekeywords=[5]{:set,:load,:info,:kind,:reload,:type,:browse,:t,:i,:k,:l,:r,:q},
+  alsoletter={:},
+  mhsdefinitions=false,
+  moredelim=[il][\GhciAnswer]{out>},
+  moredelim=**[il][\mhs@hide]{hide>},
+  add to literate={ghci>}{{{\mhs@nocopy{\mhsPrompt{ghci>}}}}}5
+    {ghci|}{{{\mhs@nocopy{\mhsPrompt{ghci|}}}}}5
+}
+\makeatother
+\def\HaskellPrompt#1{\textcolor{Mid!80}{#1}}
+\RequirePackage{tcolorbox}
+\tcbuselibrary{skins}
+% before its first step a session is typeset invisibly (its step 0), to reserve the space: then the box is not drawn
+% either, so no empty box waits on the slide; tcolorbox draws the box after it has set the session, so the flag is known
+\newif\ifGhciEmpty
+\makeatletter
+\edef\GhciStepZero{\detokenize{-0.txt}}
+\let\GhciOrigInput\mhs@ghc@input
+\def\mhs@ghc@input#1#2#3{\IfEndWith{#3}{\GhciStepZero}{\global\GhciEmptytrue}{\global\GhciEmptyfalse}\GhciOrigInput{#1}{#2}{#3}}
+\makeatother
+\newtcolorbox{GhciBox}{enhanced,frame hidden,interior hidden,boxrule=.6pt,arc=2.5pt,boxsep=1.5pt,left=2pt,right=1pt,top=3.5pt,bottom=1pt,
+   before skip=6pt,after skip=5pt,
+   underlay={\ifGhciEmpty\else\draw[fill=Wash!70,draw=CT!35,line width=.6pt,rounded corners=2.5pt]
+      ([shift={(.3pt,.3pt)}]frame.south west) rectangle ([shift={(-.3pt,-.3pt)}]frame.north east);\fi},
+   overlay={\ifGhciEmpty\else\node[anchor=west,fill=CT!75,text=white,font=\fontsize{5.5}{6}\selectfont\sffamily\bfseries,rounded corners=1.2pt,
+      inner xsep=2.5pt,inner ysep=1pt] at ([xshift=5pt]frame.north west) {\faTerminal~GHCi};\fi}}
+\BeforeBeginEnvironment{ghcisession}{\begin{GhciBox}}
+\AfterEndEnvironment{ghcisession}{\end{GhciBox}}
+
+\titleimage{\begin{tikzpicture}
+   \Pingu[left wing wave,graduate,tie=black]
+\end{tikzpicture}}
+
+\begin{document}
+\nocite{*}
+
+\begingroup
+\lcSetup{strut-line=false}
+
+\section{Intro}
+
+\begin{frame}[fragile]{Changing Values}
+\begin{fullwidth}
+\begin{columns}[T,onlytextwidth]
+\column{.5\linewidth}\lstfs[1]{7}%
+\begin{uncoverenv}<2->
+\begin{mhsfile}{DoubleList.hs}
+hidden>module DoubleList where
+doubleList :: [Int] -> [Int]
+doubleList []       = []
+doubleList (x : xs) = 2 * x : doubleList xs
+play>
+play>main :: IO ()
+play>main = print (doubleList [1, 2, 3])
+\end{mhsfile}
+\end{uncoverenv}
+\begin{uncoverenv}<3->
+\begin{mhsfile}{DoublePair.hs}
+hidden>module DoublePair where
+data Pair a = Pair a a deriving Show
+
+doublePair :: Pair Int -> Pair Int
+doublePair (Pair x y) = Pair (2 * x) (2 * y)
+play>
+play>main :: IO ()
+play>main = print (doublePair (Pair 1 2))
+\end{mhsfile}
+\end{uncoverenv}
+\begin{uncoverenv}<4->
+\begin{mhsfile}{Structures.hs}
+hidden>module Structures where
+hidden>import DoubleList
+hidden>import DoublePair
+play>data Pair a = Pair a a deriving Show
+play>
+play>doubleList :: [Int] -> [Int]
+play>doubleList []       = []
+play>doubleList (x : xs) = 2 * x : doubleList xs
+play>
+play>doublePair :: Pair Int -> Pair Int
+play>doublePair (Pair x y) = Pair (2 * x) (2 * y)
+play>
+data Tree a = Leaf | Node (Tree a) a (Tree a)
+  deriving Show
+
+doubleTree :: Tree Int -> Tree Int
+doubleTree Leaf         = Leaf
+doubleTree (Node l x r) =
+  Node (doubleTree l) (2 * x) (doubleTree r)
+hidden>
+hidden>tree :: Tree Int
+hidden>tree = Node (Node Leaf 1 Leaf) 2 Leaf
+play>
+play>tree :: Tree Int
+play>tree = Node (Node Leaf 1 Leaf) 2 Leaf
+play>
+play>main :: IO ()
+play>main = do
+play>  print (doubleList [1, 2, 3])
+play>  print (doublePair (Pair 1 2))
+play>  print (doubleTree tree)
+\end{mhsfile}
+\end{uncoverenv}
+\column{.46\linewidth}\lstfs[1]{7}%
+\begin{ghcisession}[start=2]
+doubleList [1, 2, 3]
+doublePair (Pair 1 2)
+tree
+doubleTree tree
+\end{ghcisession}
+\vspace{4mm}
+\begin{itemize}
+   \item<5-> Different values, same shape
+\end{itemize}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/Stream.html\#map(java.util.function.Function)}{\T{stream.map}, \T{optional.map}}
+\end{columns}
+\end{fullwidth}
+\NoteRef{change-every-value}
+\end{frame}
+
+\begin{frame}[fragile]{Combining Values}
+\begin{fullwidth}
+\begin{columns}[T,onlytextwidth]
+\column{.5\linewidth}\lstfs[1]{7}%
+\begin{uncoverenv}<2->
+\begin{mhsfile}{SumList.hs}
+hidden>module SumList where
+sumList :: [Int] -> Int
+sumList []       = 0
+sumList (x : xs) = x + sumList xs
+play>
+play>main :: IO ()
+play>main = print (sumList [1, 2, 3])
+\end{mhsfile}
+\end{uncoverenv}
+\begin{uncoverenv}<3->
+\begin{mhsfile}{ProductList.hs}
+hidden>module ProductList where
+productList :: [Int] -> Int
+productList []       = 1
+productList (x : xs) = x * productList xs
+play>
+play>main :: IO ()
+play>main = print (productList [2, 3, 4])
+\end{mhsfile}
+\end{uncoverenv}
+\begin{uncoverenv}<4->
+\begin{mhsfile}{Folds.hs}
+hidden>import Structures
+hidden>import SumList
+hidden>import ProductList
+play>data Tree a = Leaf | Node (Tree a) a (Tree a)
+play>
+play>sumList :: [Int] -> Int
+play>sumList []       = 0
+play>sumList (x : xs) = x + sumList xs
+play>
+play>productList :: [Int] -> Int
+play>productList []       = 1
+play>productList (x : xs) = x * productList xs
+play>
+sumTree :: Tree Int -> Int
+sumTree Leaf         = 0
+sumTree (Node l x r) =
+  sumTree l + x + sumTree r
+play>
+play>tree :: Tree Int
+play>tree = Node (Node Leaf 1 Leaf) 2 Leaf
+play>
+play>main :: IO ()
+play>main = do
+play>  print (sumList [1, 2, 3])
+play>  print (productList [2, 3, 4])
+play>  print (sumTree tree)
+\end{mhsfile}
+\end{uncoverenv}
+\column{.46\linewidth}\lstfs[1]{7}%
+\begin{ghcisession}[start=2]
+sumList [1, 2, 3]
+productList [2, 3, 4]
+sumTree tree
+\end{ghcisession}
+\vspace{5mm}
+\onslide<5->{\centering
+   % each constructor right above what sumList puts in its place
+   \begin{tikzpicture}[V/.style={font=\footnotesize\ttfamily,inner sep=.6pt,text height=1.6ex,text depth=.4ex},
+         O/.style={V,text=CT,font=\footnotesize\ttfamily\bfseries},
+         S/.style={-{Kite[length=1.1mm,width=.9mm]},CT!60,line width=.5pt,shorten >=.6pt,shorten <=.6pt},
+         R/.style={font=\scriptsize,text=Mid,anchor=east,inner sep=0pt}]
+      \matrix[ampersand replacement=\&,column sep=1.6mm,row sep=4mm] {
+         \node[V] {1}; \& \node[O] (a1) {:}; \& \node[V] {2}; \& \node[O] (a2) {:}; \& \node[V] {3}; \& \node[O] (a3) {:}; \& \node[O] (a4) {[]}; \\
+         \node[V] (l) {1}; \& \node[O] (b1) {+}; \& \node[V] {2}; \& \node[O] (b2) {+}; \& \node[V] {3}; \& \node[O] (b3) {+}; \& \node[O] (b4) {0}; \\};
+      \foreach \i in {1,...,4} \draw[S] (a\i) -- (b\i);
+      \node[R] at ([xshift=-3mm]l.west |- a1) {the list};
+      \node[R] at ([xshift=-3mm]l.west) {\T{sumList}};
+   \end{tikzpicture}\par}
+\vspace{2mm}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/Stream.html\#reduce(T,java.util.function.BinaryOperator)}{\T{reduce(0, Integer::sum)}}
+\Lam{https://en.wikipedia.org/wiki/Church_encoding}{the Church numeral \(3 = \lambda f.\,\lambda x.\, f\,(f\,(f\,x))\) is a fold too: give it \(f\) and \(x\)}
+\end{columns}
+\end{fullwidth}
+\mhsGhcUnload
+\NoteRef{combine-all-values}
+\end{frame}
+
+\begin{frame}{Many Fields, One Language}
+\ShowPerson*{curry}<5->
+\ShowPerson*{howard}<5->[34mm]
+\begin{fullwidth}\centering
+\makebox[\linewidth][c]{\begin{tikzpicture}[x=1cm,y=.88cm,F/.style={Card=30mm,minimum height=14mm,inner sep=2pt},
+      Hub/.style={rounded corners=5pt,fill=CT,text=white,font=\small,align=center,inner xsep=7pt,inner ysep=3pt}]
+   % every field of mathematics is a category: its objects, and the maps that keep their structure
+   \node[Hub,visible on=<4->] (ct) at (0,0) {\textbf{category theory}\\[-.3ex]{\footnotesize objects and arrows}};
+   \begin{scope}[visible on=<2->]
+      \node[F] (set) at (-5.1,1.58) {\textbf{Set theory}\\{\scriptsize\color{Mid}sets, functions}};
+      \node[F] (alg) at (-1.7,1.58) {\textbf{Algebra}\\{\scriptsize\color{Mid}groups, homomorphisms}};
+      \node[F] (lin) at (1.7,1.58) {\textbf{Linear algebra}\\{\scriptsize\color{Mid}vector spaces, linear maps}};
+      \node[F] (num) at (5.1,1.58) {\textbf{Number theory}\\{\scriptsize\color{Mid}rings, ring homomorphisms}};
+   \end{scope}
+   \begin{scope}[visible on=<3->]
+      \node[F] (top) at (-5.1,-1.58) {\textbf{Topology}\\{\scriptsize\color{Mid}spaces, continuous maps}};
+      \node[F] (ord) at (-1.7,-1.58) {\textbf{Order theory}\\{\scriptsize\color{Mid}ordered sets, monotone maps}};
+      \node[F] (log) at (1.7,-1.58) {\textbf{Logic}\\{\scriptsize\color{Mid}propositions, proofs}};
+      \node[F,draw=CT,line width=1.2pt] (prg) at (5.1,-1.58) {\textbf{Programming}\\{\scriptsize\color{Mid}types, functions}};
+   \end{scope}
+   % category theory comes last: it unites the fields
+   \begin{scope}[visible on=<4->]
+      \foreach \f in {set,alg,lin,num} \draw[Link] (\f.south) -- (ct);
+      \foreach \f in {top,ord,log,prg} \draw[Link] (\f.north) -- (ct);
+   \end{scope}
+   % functors are bridges between the fields
+   \begin{scope}[visible on=<5->]
+      \draw[Arr,ArrG] (top.north east) -- node[pos=.5,left=1pt,EdgeNote,text=ArrG] {homology} (alg.south west);
+      \draw[Arr,ArrG,{Kite[length=1.6mm,width=1.2mm]}-{Kite[length=1.6mm,width=1.2mm]}] (log.south) to[out=-30,in=-150]
+         node[below,EdgeNote,text=ArrG] {Curry--Howard} (prg.south);
+   \end{scope}
+\end{tikzpicture}}\end{fullwidth}
+\vspace{1mm}
+\begin{itemize}
+   \item<5-> Bridges connect the fields
+\end{itemize}
+\Watch<5->{https://www.youtube.com/watch?v=-KarQL5H3GI}{DIBEOS: The Most Abstract Area of Mathematics}
+\NoteRef{one-language-many-fields}
+\end{frame}
+
+\begin{frame}{Why Category Theory?}
+\def\TileWidth{33mm}\def\TileHeight{32mm}% Tools takes three lines
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=36mm]
+   \Tile{(0,0)}{\node[PDot=ArrF] (p1) at (3,4.5) {}; \node[PDot=ArrG] (p2) at (9,4.5) {}; \node[PDot=CT] (p3) at (15,4.5) {};
+      \draw[PArr] (p1) -- (p2); \draw[PArr] (p2) -- (p3);}{Composition}{what programs do}
+   \Tile{(1,0)}{\node[PBox,minimum width=5mm,minimum height=5mm] (p) at (9,4.5) {};
+      \foreach \a/\x/\y in {north west/3/8.5,north east/15/8.5,south west/3/.5,south east/15/.5}{\node[PDot,minimum size=1.4mm] (q) at (\x,\y) {}; \draw[PLine] (p.\a) -- (q);}}{Generality}{one definition, many instances}
+   \Tile{(2,0)}{\node[PBox=Mid,minimum width=10mm,minimum height=8mm] (p) at (9,4.5) {};
+      \draw[CT,line width=.9pt] ([shift={(-2mm,.8mm)}]p.center) -- ++(4mm,0) ([shift={(-2mm,-.8mm)}]p.center) -- ++(4mm,0);}{Proofs}{laws are equations}
+   \Tile{(3,0)}{\node[PBox=ArrG,minimum height=6mm] (p2) at (9,4.5) {}; \node[PBox=ArrF,minimum height=6mm,left=2mm of p2] {}; \node[PBox=CT,minimum height=6mm,right=2mm of p2] {};}{Tools}{patterns: \T{base}, \T{lens}, Java's streams, \ldots}
+\end{tikzpicture}\end{fullwidth}
+\vspace{5mm}
+\begin{itemize}
+   \item<1-> A vocabulary shared by mathematics and programming
+\end{itemize}
+\NoteRef{why-category-theory}
+\end{frame}
+
+\section{Foundations}
+\SectionPage[graduate,left wing wave]{1}{Foundations}{objects, arrows, and the laws they keep}
+
+\newcommand\VTRow[2]{\makebox[11mm][r]{#1}\(\;=\;#2\)}
+\begin{frame}{Values, Types, Type Classes}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[V/.style={font=\footnotesize\ttfamily},SetB/.style={BlobC,minimum width=17mm,minimum height=23mm},
+      Name/.style={font=\footnotesize\ttfamily,anchor=south,inner sep=1.5pt},node distance=4mm]
+   % the sets of values, side by side; Eq gathers the first two, Type all of them
+   % step 2: the values, step 3: the types around them, step 4: the classes over the types
+   \node[SetB,draw=none,fill=none] (b) {}; \node[Name,text opacity=0] (bn) at (b.north) {Bool};
+   \node[SetB,draw=none,fill=none,right=of b] (i) {};
+   \node[SetB,draw=none,fill=none,minimum width=22mm,right=10mm of i] (fn) {};
+   \begin{scope}[visible on=<3->]
+      \node[SetB] at (b) {}; \node[Name,text=ArrF] at (b.north) {Bool};
+      \node[SetB] at (i) {}; \node[Name,text=ArrF] at (i.north) {Int};
+      \node[SetB,minimum width=22mm] at (fn) {}; \node[Name,text=ArrF] at (fn.north) {Int -> Int};
+   \end{scope}
+   \begin{scope}[visible on=<2->]
+      \node[V] at ([yshift=4mm]b.center) {True}; \node[V] at ([yshift=-4mm]b.center) {False};
+      \node[V] at ([yshift=5.5mm]i.center) {-1}; \node[V] at (i.center) {0}; \node[V] at ([yshift=-5.5mm]i.center) {1};
+      \node[V] at ([yshift=4mm]fn.center) {(+1)}; \node[V] at ([yshift=-4mm]fn.center) {negate};
+   \end{scope}
+   \node[HGroup,inner sep=2.5mm,fit=(b)(i)(bn),visible on=<4->] (eq) {};
+   \node[Name,anchor=south west,text=Mid,visible on=<4->] at ([xshift=1mm]eq.north west) {Eq};
+   \path ([yshift=6mm]eq.north) node (top) {};
+   \begin{pgfonlayer}{background}% declared by tikzpingus
+      \node[rounded corners=5pt,fill=Wash,inner sep=3mm,fit=(eq)(fn)(top),visible on=<3->] (T) {};
+   \end{pgfonlayer}
+   \node[Name,anchor=north west,font=\small\ttfamily,visible on=<3->] at ([shift={(1.5mm,-1.2mm)}]T.north west) {Type};
+   % the table of sets, row group by row group; fixed first column, so the groups align
+   \node[anchor=north west,font=\small,align=left,inner sep=0pt,visible on=<3->] (t1) at ([shift={(4mm,-2mm)}]T.north east) {%
+      \VTRow{\(\textcolor{ArrF}{\mathtt{Bool}}\)}{\{\mathtt{False}, \mathtt{True}\}}\\[1mm]
+      \VTRow{\(\textcolor{ArrF}{\mathtt{()}}\)}{\{\mathtt{()}\}}\\[1mm]
+      \VTRow{\(\textcolor{ArrF}{\mathtt{Int}}\)}{\{\dots, \mathtt{-1}, \mathtt{0}, \mathtt{1}, \dots\}}};
+   \node[anchor=north west,font=\small,align=left,inner sep=0pt,visible on=<4->] (t2) at ([yshift=-1.6mm]t1.south west) {%
+      \VTRow{\(\mathtt{Eq}\)}{\{\textcolor{ArrF}{\mathtt{Bool}}, \textcolor{ArrF}{\mathtt{Int}}, \dots\}}\\[1mm]
+      \VTRow{\(\mathtt{Type}\)}{\{\textcolor{ArrF}{\mathtt{()}}, \textcolor{ArrF}{\mathtt{Int}}\,\texttt{->}\,\textcolor{ArrF}{\mathtt{Int}}, \dots\}}};
+   \node[anchor=north west,font=\small,inner sep=0pt,visible on=<4->] (ct) at ([yshift=-5mm]t2.south west) {\textbf{compile time}: types, classes};
+   \node[anchor=north west,font=\small,align=left,inner sep=0pt,visible on=<2->] at ([yshift=-1.5mm]ct.south west) {\textbf{runtime}: values\\[.5mm]{\scriptsize\color{Mid}(leaving reflection aside)}};
+\end{tikzpicture}\end{fullwidth}
+\NoteRef{values-types-classes}
+\end{frame}
+
+\begin{frame}[fragile,optional]{What Is What}
+\centering
+\begin{tikzpicture}[y=7.4mm,C/.style={font=\small,inner sep=0pt,anchor=base west},
+      N/.style={font=\footnotesize,inner sep=1.5pt,anchor=base west},
+      To/.style={-{Kite[length=1.4mm,width=1.1mm]},Mid,thin,line cap=round,shorten >=1.5pt,shorten <=1.5pt},
+      Hi/.style={fill=Wash,rounded corners=2pt,inner sep=1pt}]
+   \node[C] (a1) at (0,0) {\ihs{data}}; \node[C,Hi,anchor=base west] (ty) at ([xshift=1.2mm]a1.base east) {\ihs{Color}}; \node[C] (a3) at ([xshift=1.2mm]ty.base east) {\ihs{= Red | Green}};
+   \node[C] (b1) at (0,-1) {\ihs{  deriving}}; \node[C,Hi] (cl) at ([xshift=1.2mm]b1.base east) {\ihs{Eq}};
+   \node[C] (c1) at (0,-2) {\ihs{isRed ::}}; \node[C,Hi] (ft) at ([xshift=1.2mm]c1.base east) {\ihs{Color -> Bool}};
+   \node[C] (d1) at (0,-3) {\ihs{isRed Red   = True}};
+   \node[C,Hi] (fv) at (0,-4) {\ihs{isRed}}; \node[C] (e2) at ([xshift=1.2mm]fv.base east) {\ihs{Green = False}};
+   \node[C] (f1) at (0,-5) {\ihs{main = print (}}; \node[C,Hi] (rv) at (f1.base east) {\ihs{isRed Green}}; \node[C] at (rv.base east) {\ihs{)}};
+   \foreach \l/\t in {a3/{a type: \ihs{Color} \(=\) \{\ihs{Red}, \ihs{Green}\}},
+         cl/{\ihs{Color} \(\in\) \ihs{Eq} \(=\) \{\ihs{Bool}, \ihs{Int}, \dots\}},
+         ft/{a set of \(2^2\) functions},
+         e2/{one of them: \{\ihs{Red} \(\mapsto\) \ihs{True}, \ihs{Green} \(\mapsto\) \ihs{False}\}}}{
+      \node[N] (n\l) at ([xshift=5mm]\l.base east) {\t};
+      \draw[To] (n\l.west) -- (\l.east);}
+   \node[N] (nr) at ([xshift=7mm]rv.base east) {at runtime: \ihs{False} \(\in\) \ihs{Bool}};
+   \draw[To] (nr.west) -- ([xshift=2mm]rv.east);
+\end{tikzpicture}
+\vspace{2mm}
+\vspace{3mm}
+{\footnotesize\color{Mid}compile time: check types, choose instances, erase types\\runtime: values, and instances as dictionaries\par}
+\NoteRef{what-is-what}
+\end{frame}
+
+\begin{frame}[fragile]{Sets and Functions}
+\PinguSays[detective cap]<4->{read \T{g . f} from right to left}
+\centering
+\begin{tikzpicture}[Blob/.append style={minimum height=23mm},SetName/.style={Lbl,anchor=base},Fun/.style={font=\small,anchor=base}]
+   \node[Blob] (A) {};
+   \node[SetName] at ([yshift=2.5mm]A.north) {\T{Int}};
+   \foreach \v/\y in {1/7mm,2/0mm,3/-7mm} \node[font=\small] (a\v) at ([yshift=\y]A.center) {\v};
+   \node[Blob,right=19mm of A,visible on=<2->] (B) {};
+   \node[SetName,visible on=<2->] at ([yshift=2.5mm]B.north) {\T{Bool}};
+   \node[font=\small,visible on=<2->] (bt) at ([yshift=4mm]B.center) {\T{True}};
+   \node[font=\small,visible on=<2->] (bf) at ([yshift=-4mm]B.center) {\T{False}};
+   \foreach \v/\b in {1/bf,2/bt,3/bf} \draw[Arr,Af,thin,visible on=<2->] (a\v) -- (\b);
+   \node[Fun,text=ArrF,visible on=<2->] at ([yshift=2.5mm]$(A.north)!.5!(B.north)$) {\T{even}};
+   \node[Blob,right=19mm of B,visible on=<3->] (C) {};
+   \node[SetName,visible on=<3->] at ([yshift=2.5mm]C.north) {\T{String}};
+   \node[font=\small,visible on=<3->] (ct) at ([yshift=4mm]C.center) {\T{"True"}};
+   \node[font=\small,visible on=<3->] (cf) at ([yshift=-4mm]C.center) {\T{"False"}};
+   \draw[Arr,Ag,thin,visible on=<3->] (bt) -- (ct); \draw[Arr,Ag,thin,visible on=<3->] (bf) -- (cf);
+   \node[Fun,text=ArrG,visible on=<3->] at ([yshift=2.5mm]$(B.north)!.5!(C.north)$) {\T{show}};
+   \draw[Arr,CT,visible on=<4->] (A.south) to[bend right=14] node[below,font=\small] {\T{show . even}} (C.south);
+\end{tikzpicture}
+\vspace{3mm}
+\begin{itemize}
+   \item<2-> \(\cF\colon A \to B\) maps each element of \(A\) to one of \(B\)
+   \item<4-> \(\cG \circ \cF\), \enquote{\(\cG\) after \(\cF\)}, is \ihs{g . f} in Haskell\supercite[ch.~1]{milewski2019}
+\end{itemize}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/function/Function.html\#andThen(java.util.function.Function)}{\T{show.compose(even)} or \T{even.andThen(show)}}
+\NoteRef{sets-and-functions}
+\end{frame}
+
+\begin{frame}{Composition Is Associative}
+\centering
+\begin{tikzpicture}[node distance=15mm,Obj/.append style={minimum size=8.5mm}]
+   \node[Obj] (a) {\(A\)};
+   \node[Obj,right=of a] (b) {\(B\)};
+   \node[Obj,right=of b] (c) {\(C\)};
+   \node[Obj,right=of c] (d) {\(D\)};
+   \draw[Arr,Af] (a) -- node[above] {\(f\)} (b);
+   \draw[Arr,Ag,visible on=<2->] (b) -- node[above] {\(g\)} (c);
+   \draw[Arr,Ah,visible on=<4->] (c) -- node[above] {\(h\)} (d);
+   \draw[Arr,CT,visible on=<3->] (a) to[bend left=28] node[above] {\(g \circ f\)} (c);
+   \draw[Arr,CT,visible on=<5->] (b) to[bend right=26] node[pos=.3,sloped,below=-1pt,font=\small] {\(h \circ g\)} (d);
+   \draw[Arr,CT,visible on=<6->] (a) to[bend right=34] node[below] {\(h \circ g \circ f\)} (d);
+   \draw[Arr,visible on=<7->] (a) to[out=150,in=210,loop,looseness=6] node[left] {\(\symit{id}_A\)} (a);
+\end{tikzpicture}
+\vspace{0mm}
+\begin{itemize}
+   \item<6-> \(\bigl(\cH \circ (\cG \circ \cF)\bigr)(x) = \cH(\cG(\cF(x))) = \bigl((\cH \circ \cG) \circ \cF\bigr)(x)\)
+   \item<7-> \(\symit{id}(x) = x\), so \(\cF \circ \symit{id} = \cF = \symit{id} \circ \cF\)\supercite[ch.~1]{milewski2019}
+   \item<8-> \ct{Why care?} Regroup pipelines freely: helpers, refactoring
+   \item<9-> \ct{Only if pure}: same input, same output, no side effects
+\end{itemize}
+\NoteRef{composition-is-associative}
+\end{frame}
+
+\begin{frame}{Categories}
+\ShowPerson{eilenberg}<3->
+\ShowPerson{maclane}<3->[52mm]
+\centering
+\begin{tikzpicture}
+   % three sets of elements; from step 2 on only the objects, the elements are forgotten
+   % step 1: three sets with their elements; from step 2 on the sets shrink to points, the objects
+   \node[Blob,visible on=<1| handout:0>] (A) {};
+   \node[Blob,visible on=<1| handout:0>,right=20mm of A] (B) {};
+   \node[Blob,visible on=<1| handout:0>,right=20mm of B] (C) {};
+   \foreach \n in {A,B,C} \foreach \y in {6mm,0mm,-6mm}
+      \node[circle,fill=Mid,inner sep=1pt,visible on=<1| handout:0>] at ([yshift=\y]\n.center) {};
+   \draw[Arr,Af,visible on=<1| handout:0>] (A) -- node[above] {\(f\)} (B);
+   \draw[Arr,Ag,visible on=<1| handout:0>] (B) -- node[above] {\(g\)} (C);
+   \node[Obj,visible on=<2->] (a) at (A) {\(A\)};
+   \node[Obj,visible on=<2->] (b) at (B) {\(B\)};
+   \node[Obj,visible on=<2->] (c) at (C) {\(C\)};
+   \draw[Arr,Af,visible on=<2->] (a) -- node[above] {\(f\)} (b);
+   \draw[Arr,Ag,visible on=<2->] (b) -- node[above] {\(g\)} (c);
+   \draw[Arr,CT,visible on=<2->] (a) to[bend right=28] node[below] {\(g \circ f\)} (c);
+\end{tikzpicture}
+\vspace{4mm}
+\begin{itemize}
+   \item<2-> A \ct{category} has \ct{objects} and \ct{arrows} \(\cF\colon A \to B\)\supercite{eilenberg1945natural}
+   \item<2-> with \ct{composition} \(\cG \circ \cF\) and \ct{identities} \(\symit{id}_A\)
+   \item<4-> Composition is associative, identities change nothing
+\end{itemize}
+\NoteRef{categories}
+\end{frame}
+
+\begin{frame}{Definition: Category}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[y=-5.4mm,What/.style={font=\small\bfseries,text=CT,anchor=base west,inner sep=0pt},
+      Formal/.style={font=\small,anchor=base west,inner sep=0pt},Plain/.style={font=\footnotesize,text=Mid,anchor=base west,inner sep=0pt},
+      Group/.style={font=\scriptsize,text=Mid,anchor=base east,inner sep=0pt}]
+   % one row per part: its name, the formal statement, and the same in plain words
+   \foreach \y/\o/\n/\f/\p in {
+         0/1/objects/{a class \(\text{ob}(\mathcal{C})\) of objects \(A, B, C, \dots\)}/{the things},
+         1/2/arrows/{a class \(\mathcal{C}(A, B)\) of arrows \(\cF\colon A \to B\)}/{the ways from \(A\) to \(B\)},
+         2/3/composition/{\(\cF\colon A \to B\) and \(\cG\colon B \to C\) give \(\cG \circ \cF\colon A \to C\)}/{first one, then the other},
+         3/4/identities/{\(\symit{id}_A\colon A \to A\) for every object \(A\)}/{stay where you are},
+         4.4/5/associativity/{\(\cH \circ (\cG \circ \cF) = (\cH \circ \cG) \circ \cF\)}/{brackets do not matter},
+         5.4/6/identity law/{\(\cF \circ \symit{id}_A = \cF = \symit{id}_B \circ \cF\)}/{staying changes nothing}}{
+      \begin{scope}[visible on=<\o->]
+         \node[What] at (0,\y) {\n};
+         \node[Formal] at (27mm,\y) {\f};
+         \node[Plain] at (100mm,\y) {\p};
+      \end{scope}}
+   \node[Group] at (-2mm,0) {data};
+   \node[Group,visible on=<5->] at (-2mm,4.4) {laws};
+   \draw[Mid!50,visible on=<5->] (0,3.7) -- (130mm,3.7);
+   \node[Plain,visible on=<2->] at (0,6.45) {\textbf{Notation}\enspace \(\text{ob}(\mathcal{C})\): the objects of \(\mathcal{C}\)\qquad
+      \(\mathcal{C}(A, B)\): the arrows from \(A\) to \(B\)};
+   % the remark on classes is for reading: the handout shows it, in the talk it is in the speaker notes
+   \mode<handout>{\node[rounded corners=5pt,fill=Wash,inner sep=5pt,text width=126mm,align=left,font=\footnotesize,anchor=north west,NoHyphens]
+      at (-1mm,6.95) {\textbf{Class or set?}\enspace All sets together do not form a set (Russell), so the definition says
+      \enquote{class}: the one of set theory, not a type class. Read it as \enquote{set}: in \textbf{Set}, \textbf{Hask}, and every
+      example of today, each \(\mathcal{C}(A, B)\) is a set.\supercite{maclane1998cwm}};}
+\end{tikzpicture}\end{fullwidth}
+\NoteRef{definition-category}
+\end{frame}
+
+\begin{frame}{Examples of Categories}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=34mm]
+   \foreach \x/\o/\h/\d in {0/1/Set/sets and functions,1/2/Hask/types and functions,2/3/Monoid/{one object, numbers as arrows},3/4/Order/{\(m \to n\) iff \(m \leq n\)}}{
+      \node[Card=31mm,minimum height=24mm,visible on=<\o->] (card) at (\x,0) {};
+      \node[font=\small\bfseries,anchor=north,visible on=<\o->] at ([yshift=-1mm]card.north) {\h};
+      \node[font=\footnotesize,anchor=south,visible on=<\o->,text width=29mm,align=center,NoHyphens] at ([yshift=1mm]card.south) {\d};}
+   \begin{scope}[visible on=<1->]\node[Dot] (x) at (-.25,0) {}; \node[Dot] (y) at (.25,0) {}; \draw[Arr,Af] (x) -- (y);\end{scope}
+   \begin{scope}[visible on=<2->,shift={(1,0)}]\node[font=\scriptsize\ttfamily] (x) at (-.3,0) {Int}; \node[font=\scriptsize\ttfamily] (y) at (.3,0) {Bool}; \draw[Arr,Af] (x) -- (y);\end{scope}
+   \begin{scope}[visible on=<3->,shift={(2,0)}]\node[Dot] (x) {}; \draw[Arr,Af] (x) to[out=150,in=210,looseness=16] (x); \draw[Arr,Ag] (x) to[out=-30,in=30,looseness=16] (x);\end{scope}
+   \begin{scope}[visible on=<4->,shift={(3,0)}]\foreach \i in {-1,0,1} \node[Dot] (n\i) at (\i*.25,0) {}; \draw[Arr,Af] (n-1) -- (n0); \draw[Arr,Ag] (n0) -- (n1);
+      \draw[Arr,Mid] (n-1) to[bend left=55] (n1);\end{scope}
+   % the formal description under each card: objects, arrows, composition, identity
+   \foreach \x/\o/\t in {
+         0/1/{objects: & sets\\ \(\mathcal{C}(A, B)\): & functions\\ compose: & \(g \mathbin{\circ} f\)\\ identity: & \(x \mapsto x\)},
+         1/2/{objects: & types\\ \(\mathcal{C}(a, b)\): & \T{a -> b}\\ compose: & \T{g . f}\\ identity: & \T{id}},
+         2/3/{objects: & just one, \(\ast\)\\ arrows: & its elements\\ compose: & \(x \cdot y\)\\ identity: & \(e\)},
+         3/4/{objects: & numbers\\ \(\mathcal{C}(m, n)\): & one if \(m \leq n\)\\ compose: & transitivity\\ identity: & \(n \leq n\)}}
+      \node[font=\scriptsize,text=Mid,anchor=north,inner sep=0pt,visible on=<\o->] at (\x,-14.5mm)
+         {\begin{tabular}{@{}r@{\enspace}l@{}}\t\end{tabular}};
+\end{tikzpicture}\end{fullwidth}
+\vspace{2mm}
+\begin{itemize}
+   \item<5-> Objects do not need to be sets, arrows do not need to be functions\supercite{maclane1998cwm}
+\end{itemize}
+\NoteRef{examples-of-categories}
+\end{frame}
+
+\begin{frame}[fragile]{Objects and Arrows in Haskell}
+\vspace*{3mm}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[O/.style={Ob,font=\footnotesize\ttfamily},L/.style={font=\scriptsize\ttfamily},
+      Say/.style={font=\scriptsize,text=Mid},C/.style={Note,align=left,text=Ink!80,font=\footnotesize}]
+   % a part of Hask: Bool and Int in the middle row, what reaches them above and below
+   \matrix[ampersand replacement=\&,column sep=11mm,row sep=8mm] {
+                             \&                         \&                               \& \node[O] (c) {\ihs{Char}};        \& \node[O] (s) {\ihs{String}}; \\
+      \node[O] (v) {\ihs{Void}};   \&[15mm] \node[O] (u) {\ihs{()}};      \& \node[O] (b) {\ihs{Bool}};          \& \node[O] (i) {\ihs{Int}};         \&                        \\
+                             \&                         \& \node[O] (m) {\ihs{Maybe Bool}};    \& \node[O] (p) {\ihs{(Int, Bool)}}; \& \node[O] (l) {\ihs{[Int]}};  \\
+   };
+   \draw[Arr] (v) -- node[above=3pt,L] {\ihs{absurd}} (u);
+   \draw[Arr] (u) to[bend left=30] node[above,L] (tt) {\ihs{True}} (b);
+   \draw[Arr] (u) to[bend right=30] node[below,L] (ff) {\ihs{False}} (b);
+   \draw[Arr] (b) to[out=70,in=20,looseness=5] node[above right=-1pt,L] {\ihs{not}} (b);
+   \draw[Arr] (b) -- node[right,L] {\ihs{Just}} (m);
+   \draw[Arr] (i) -- node[above,L] (ev) {\ihs{even}} (b);
+   \draw[Arr] (c) -- node[right,L] {\ihs{ord}} (i);
+   \draw[Arr] (i) -- node[sloped,below=-1pt,L] {\ihs{show}} (s);
+   \draw[Arr] (l) -- node[sloped,above=-1pt,L] {\ihs{sum}} (i);
+   \draw[Arr] (p) -- node[right,L] {\ihs{fst}} (i);
+   \draw[Arr] (p) -- node[sloped,above=-1pt,L,pos=.45] {\ihs{snd}} (b);
+   \node[Say,below=1.5mm of v,align=center] {no values,\\so \ihs{absurd}\\never runs};
+   \node[Say,below=6mm of u] (one) {one value};
+   % what is what, as comments in the picture
+   \node[C,anchor=west] (k1) at ([xshift=-2mm]v.west |- c) {object: a \textbf{type}, like \T{Int}};
+   \node[C,anchor=north west] (k3) at ([shift={(-2mm,-3mm)}]v.west |- m.south) {a value: an arrow from \T{()}, like \T{True} and \T{False}\\{\color{Mid}in a signature, a type variable \T{a} stands for any object}};
+   \node[C,anchor=south] (k2) at ([yshift=2mm]b.north |- c.north) {arrow: a \textbf{function}};
+   \draw[NoteArr] (k1.south) to[bend right=15] (v.north);
+   \draw[NoteArr] (k2.south east) to[bend left=15] (ev.north);
+   \node[Say,anchor=south east] at ([yshift=2mm]s.north east) {and infinitely many more};
+\end{tikzpicture}\end{fullwidth}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Object.html}{there an \enquote{object} is a value with methods, here it is a type}
+\NoteRef{objects-and-arrows-in-haskell}
+\end{frame}
+
+\begin{frame}{Reading a Diagram}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.40\linewidth}
+\centering
+\begin{tikzcd}[ampersand replacement=\&,column sep=huge,row sep=huge]
+   \mathtt{Int} \arrow[r,cf,"\mathtt{even}"] \arrow[dr,visible on=<3->,cc,"\texttt{show . even}"'] \& \mathtt{Bool} \arrow[d,cg,visible on=<2->,"\mathtt{show}"] \\
+   \& |[visible on=<2->]| \mathtt{String}
+\end{tikzcd}
+\column{0.55\linewidth}
+\begin{itemize}
+   \item<1-> \DiagKey{Node} an object
+   \item<1-> \DiagKey{Arrow} a function
+   \item<2-> \DiagKey{Path} composition
+   \item<3-> \DiagKey{\ct{Commutes}} all paths are equal
+   \item<4-> \DiagKey{Dashed} exists exactly once
+   \item<4-> {\color{Mid}\DiagKey{\(\Rightarrow\)} between functors {\scriptsize(not today)}}
+\end{itemize}
+\end{columns}
+\end{fullwidth}
+\NoteRef{reading-a-diagram}
+\end{frame}
+
+\begin{frame}[optional]{Laws as Diagrams}
+\centering
+\begin{tikzcd}[ampersand replacement=\&,column sep=14mm,row sep=12mm,cells={nodes={Obj}}]
+   A \arrow[r,cf,"f"] \arrow[dr,cf,"f"'] \& B \arrow[d,"\symit{id}_B"] \\ \& B
+\end{tikzcd}
+\hspace{16mm}
+\onslide<2->{\begin{tikzcd}[ampersand replacement=\&,column sep=14mm,row sep=12mm,cells={nodes={Obj}}]
+   A \arrow[r,cf,"f"] \arrow[dr,cc,"g \circ f"'] \arrow[drr,Mid,bend right=62,"h \circ g \circ f"'] \& B \arrow[d,cg,"g"] \arrow[dr,cc,"h \circ g"] \& \\ \& C \arrow[r,ch,"h"'] \& D
+\end{tikzcd}}
+\vspace{5mm}
+\begin{itemize}
+   \item<1-> \textbf{Identity}: \(\symit{id}_B \circ \cF = \cF = \cF \circ \symit{id}_A\)
+   \item<2-> \textbf{Associativity}: \(\cH \circ (\cG \circ \cF) = (\cH \circ \cG) \circ \cF\)
+   \item<3-> A diagram \ct{commutes}: all paths are equal\supercite{maclane1998cwm}
+\end{itemize}
+\NoteRef{laws-as-diagrams}
+\end{frame}
+
+\begin{frame}[fragile]{Products}
+\begin{fullwidth}\begin{columns}[c,onlytextwidth]
+\column{0.562\linewidth}
+\centering
+% the universal property; the instance of the ghci session in a box of its own below
+\begin{tikzpicture}[UP,node distance=10mm and 14mm]
+   \node[Ob] (p) {\ihs{(a, b)}};
+   \node[Ob,left=of p] (a) {\ihs{a}};
+   \node[Ob,right=of p] (b) {\ihs{b}};
+   \node[Ob,above=of p,visible on=<3->] (c) {\ihs{c}};
+   \draw[Arr,visible on=<2->] (p) -- node[EL,above] {\ihs{fst}} (a);
+   \draw[Arr,visible on=<2->] (p) -- node[EL,above] {\ihs{snd}} (b);
+   \draw[Arr,Af,visible on=<3->] (c) -- node[EL,above left] {\ihs{f}} (a);
+   \draw[Arr,Ag,visible on=<3->] (c) -- node[EL,above right] {\ihs{g}} (b);
+   % the dashed h comes first, alone: what must it be?
+   \draw[Arr,CT,dashed,visible on=<4->] (c) -- node[EL,right] {\ihs{h}} (p);
+   % what the letters are
+   \node[Def,anchor=north,visible on=<3->] (d1) at ([yshift=-2mm]current bounding box.south) {\textcolor{ArrF}{\ihs{f :: c -> a}}\quad\textcolor{ArrG}{\ihs{g :: c -> b}}};
+   \node[Def,anchor=north,visible on=<5->] at (d1.south) {\textcolor{CT}{\ihs{h = pair f g :: c -> (a, b)}}\\\ihs{fst . h = f}\quad\ihs{snd . h = g}};
+\end{tikzpicture}
+\column{0.368\linewidth}
+\begin{itemize}
+   \item<1-> \ihs{(a, b)}: an \ihs{a} \emph{and} a \ihs{b}
+   \item<2-> \ihs{fst}, \ihs{snd} take it apart
+   \item<3-> Any \ihs{c} with arrows to both \ldots
+   \item<5-> \ldots\ in one way: \ihs{pair f g}\supercite[ch.~5]{milewski2019}
+\end{itemize}
+\end{columns}
+\vspace{2mm}
+\begin{ghcisession}[start=6]
+let pair f g x = (f x, g x)
+pair show even 4
+\end{ghcisession}
+\end{fullwidth}
+\HsLib{}{in the library: \T{f \&\&\& g}}
+\NoteRef{products}
+\end{frame}
+
+\begin{frame}[fragile]{Sums, or Coproducts\De{Koprodukte}}
+\begin{fullwidth}\begin{columns}[c,onlytextwidth]
+\column{0.562\linewidth}
+\centering
+% the dual picture; the instance of the ghci session in a box of its own below
+\begin{tikzpicture}[UP,node distance=10mm and 14mm]
+   \node[Ob] (e) {\ihs{Either a b}};
+   \node[Ob,left=of e] (a) {\ihs{a}};
+   \node[Ob,right=of e] (b) {\ihs{b}};
+   \node[Ob,below=of e,visible on=<3->] (c) {\ihs{c}};
+   \draw[Arr,visible on=<2->] (a) -- node[EL,above] {\ihs{Left}} (e);
+   \draw[Arr,visible on=<2->] (b) -- node[EL,above] {\ihs{Right}} (e);
+   \draw[Arr,Af,visible on=<3->] (a) -- node[EL,below left] {\ihs{f}} (c);
+   \draw[Arr,Ag,visible on=<3->] (b) -- node[EL,below right] {\ihs{g}} (c);
+   \draw[Arr,CT,dashed,visible on=<4->] (e) -- node[EL,right] {\ihs{h}} (c);
+   % what the letters are
+   \node[Def,anchor=north,visible on=<3->] (d1) at ([yshift=-2mm]current bounding box.south) {\textcolor{ArrF}{\ihs{f :: a -> c}}\quad\textcolor{ArrG}{\ihs{g :: b -> c}}};
+   \node[Def,anchor=north,visible on=<4->] at (d1.south) {\textcolor{CT}{\ihs{h = either f g :: Either a b -> c}}\\\ihs{h . Left = f}\quad\ihs{h . Right = g}};
+\end{tikzpicture}
+\column{0.368\linewidth}
+\begin{itemize}
+   \item<1-> \ihs{Either a b}: an \ihs{a} \emph{or} a \ihs{b}
+   \item<2-> \ihs{Left}, \ihs{Right} build it
+   \item<3-> Any \ihs{c} reached from \ihs{a}, \ihs{b} \ldots
+   \item<4-> \ldots\ in one way: \ihs{either f g}
+   \item<5-> The \ct{\Term{dual}{reverse every arrow of a definition: the product (arrows out) becomes the sum (arrows in).}} of the product\supercite[ch.~5]{milewski2019}
+\end{itemize}
+\end{columns}
+\vspace{2mm}
+\begin{ghcisession}[start=6]
+map (either show reverse) [Left 42, Right "abc"]
+\end{ghcisession}
+\end{fullwidth}
+\HsLib{}{in the library: \T{f ||| g}}
+\NoteRef{sums}
+\end{frame}
+
+\begin{frame}[optional]{Algebra of Types}
+\PinguSays[monocle left]<4->{hence \enquote{algebraic} data types}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46mm]
+   \foreach \x/\o/\h/\n/\v/\m in {0/1/{Either Bool ()}/sum/{Left F, Left T,\\Right ()}/{\(2 + 1 = 3\)},
+         1/2/{(Bool, Bool)}/product/{(F,F), (F,T),\\(T,F), (T,T)}/{\(2 \cdot 2 = 4\)},
+         2/3/{Bool -> Bool}/exponential/{id, not,\\const T, const F}/{\(2^2 = 4\)}}
+      \node[Card=43mm,minimum height=31mm,visible on=<\o->] at (\x,0) {\textbf{\small\n}\\[1.5mm]\T{\h}\\[1.5mm]{\color{Mid}\scriptsize\T{\{\v\}}}\\[2mm]{\normalsize\visible<4->{\m}}};
+\end{tikzpicture}\end{fullwidth}
+\vspace{3mm}
+\vspace{3mm}{\centering\onslide<4->{\ihs{Maybe a}: \(1 + |a|\)\qquad \ihs{[a]}: \(L = 1 + |a| \cdot L\)\supercite[ch.~6]{milewski2019}\par}}
+\raggedright
+\Lam{https://en.wikipedia.org/wiki/Currying}{currying is the law \((c^{b})^{a} = c^{a \cdot b}\)}
+\Java{}{\href{https://docs.oracle.com/en/java/javase/21/language/records.html}{records} (Java 16) are products, \href{https://docs.oracle.com/en/java/javase/21/language/sealed-classes-and-interfaces.html}{sealed interfaces} (Java 17) are sums}
+\NoteRef{algebra-of-types}
+\end{frame}
+
+\begin{frame}[fragile]{Isomorphisms}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.446\linewidth}
+\centering
+\begin{tikzpicture}
+   \node[Obj] (a) {\(A\)};
+   \node[Obj,right=20mm of a] (b) {\(B\)};
+   \draw[Arr,Af] (a) to[bend left=25] node[above] {\(f\)} (b);
+   \draw[Arr,Ag,visible on=<2->] (b) to[bend left=25] node[below] {\(g\)} (a);
+\end{tikzpicture}\\[3mm]
+\onslide<2->{\(\cG \circ \cF = \symit{id}_A\)\qquad \(\cF \circ \cG = \symit{id}_B\)}
+\column{0.484\linewidth}
+\begin{itemize}
+   \item<3-> The same up to renaming\supercite[ch.~6]{milewski2019}
+   \item<4-> \(A \cong B\) reads: \(A\) is \ct{isomorphic} to \(B\)
+   \item<4-> \ihs{Bool} \(\cong\) \ihs{Either () ()}
+   \item<4-> \ihs{Maybe a} \(\cong\) \ihs{Either () a}
+   \item<5-> \ihs{(a, b)} \(\cong\) \ihs{(b, a)} by \ihs{swap}
+\end{itemize}
+\end{columns}
+\end{fullwidth}
+\NoteRef{isomorphisms}
+\end{frame}
+
+
+\Takeaway[takeaway-types]{A type is what you can do with it}{%
+   \begin{tikzpicture}[N/.style={Ob,font=\small\ttfamily},L/.style={font=\scriptsize\ttfamily,text=Mid},
+         Say/.style={font=\footnotesize,text=Mid}]
+      % a product is known by the arrows out of it, a sum by the arrows into it
+      \node[N] (p) at (0,0) {(a, b)}; \node[N] (pa) at (-1.6,-1.6) {a}; \node[N] (pb) at (1.6,-1.6) {b};
+      \draw[Arr] (p) -- node[L,above left] {fst} (pa); \draw[Arr] (p) -- node[L,above right] {snd} (pb);
+      \node[Say] at (0,-2.4) {arrows out: take it apart};
+      \node[N] (ea) at (5,0) {a}; \node[N] (eb) at (8.2,0) {b}; \node[N] (e) at (6.6,-1.6) {Either a b};
+      \draw[Arr] (ea) -- node[L,below left] {Left} (e); \draw[Arr] (eb) -- node[L,below right] {Right} (e);
+      \node[Say] at (6.6,-2.4) {arrows in: build it};
+   \end{tikzpicture}}{\T{fst}, \T{snd} take the pair apart, \T{Left}, \T{Right} build the \T{Either}.}
+
+\section{Functors}
+\SectionPage[glasses,wings wave]{2}{Functors}{map the contents, keep the shape}
+
+% \SVTree{prefix}{structure color}{root}{left}{right}: a two-level tree of boxes; its boxes and edges are structure
+\newcommand\SVTree[5]{%
+   \node[SVBox,draw=#2] (#1r) {#3};
+   \node[SVBox,draw=#2,below left=3mm and .5mm of #1r] (#1a) {#4};
+   \node[SVBox,draw=#2,below right=3mm and .5mm of #1r] (#1b) {#5};
+   \draw[#2,thick,line cap=round] (#1r.south) -- (#1a.north) (#1r.south) -- (#1b.north);}
+% the structure stays gray in the background, the values are marked as with a highlighter
+\newcommand\Sv[1]{\textcolor{Mid}{#1}}% structure
+\newcommand\Vv[1]{{\setlength\fboxsep{.8pt}\colorbox{ArrF!22}{\textcolor{ArrF!75!black}{\bfseries#1}}}}% value
+\begin{frame}{Idea of a Functor}
+\vspace*{4mm}
+\centering
+\begin{tikzpicture}[N/.style={font=\small\ttfamily,minimum width=20mm}]
+   \node[N,text=ArrF] (v1) at (0,0) {2}; \node[N,text=ArrF] (v2) at (6,0) {3};
+   \draw[Arr,Af] (v1) -- node[above,font=\small\ttfamily] {(+1)} (v2);
+   \node[N,text=ArrG,visible on=<2->] (j1) at (0,-1.4) {Just 2}; \node[N,text=ArrG,visible on=<2->] (j2) at (6,-1.4) {Just 3};
+   \draw[Arr,Ag,visible on=<2->] (j1) -- node[above,font=\small\ttfamily] {fmap (+1)} (j2);
+   \node[N,text=ArrG,visible on=<3->] (l1) at (0,-2.5) {[2, 5]}; \node[N,text=ArrG,visible on=<3->] (l2) at (6,-2.5) {[3, 6]};
+   \draw[Arr,Ag,visible on=<3->] (l1) -- node[above,font=\small\ttfamily] {fmap (+1)} (l2);
+\end{tikzpicture}
+\vspace{4mm}
+\begin{itemize}
+   \item<2-> A function reaches \textbf{into a container}, a box of values
+   \item<3-> The container stays, only the values change
+\end{itemize}
+\PinguSays<4->{like \T{doubleList} and \T{doubleTree},\\for every container}
+\NoteRef{idea-of-a-functor}
+\end{frame}
+
+\begin{frame}{Structure vs. Values}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[SVBox/.style={rounded corners=2pt,line width=.7pt,fill=white,inner sep=2.2pt,font=\footnotesize\ttfamily},
+      Cap/.style={font=\footnotesize,align=center},Ty/.style={font=\footnotesize\ttfamily,text=Ink},
+      Code/.style={font=\footnotesize\ttfamily,text=black,fill=white,rounded corners=2pt,inner sep=2pt},
+      Panel/.style={rounded corners=6pt,fill=Wash!70,minimum width=44mm,minimum height=55mm,anchor=north},
+      Step/.style={-{Kite[length=1.6mm,width=1.2mm]},line cap=round,Mid,shorten >=.8mm,shorten <=.8mm}]
+   % one panel: \SVPanel{x}{overlay}{prefix}{type}{caption}{root}{left}{right}{code}{root}{left}{right}
+   \foreach \x/\o/\n/\t/\c/\r/\l/\q/\f/\rr/\ll/\qq in {
+         0/1/a/{Tree Int}/{\Sv{structure}: the tree\\\Vv{values}: numbers}/\Vv{3}/\Vv{1}/\Vv{2}/{fmap (* 2) t}/\Vv{6}/\Vv{2}/\Vv{4},
+         48/2/b/{Tree [Int]}/{\Sv{structure}: the tree\\\Vv{values}: whole lists}/\Vv{[3]}/\Vv{[1,2]}/\Vv{[]}/{fmap length t}/\Vv{1}/\Vv{2}/\Vv{0},
+         96/3/c/{Tree [Int]}/{\Sv{structure}: tree and lists\\\Vv{values}: numbers}/{\Sv{[}\Vv{3}\Sv{]}}/{\Sv{[}\Vv{1},\Vv{2}\Sv{]}}/\Sv{[]}/{fmap (fmap (* 2)) t}/{\Sv{[}\Vv{6}\Sv{]}}/{\Sv{[}\Vv{2},\Vv{4}\Sv{]}}/\Sv{[]}}{
+      \begin{scope}[shift={(\x mm,0)},visible on=<\o->]
+         \node[Panel] at (0,15.5mm) {};
+         \node[Ty] at (0,11.5mm) {t :: \t};
+         \node[Cap] at (0,5mm) {\c};
+         \begin{scope}[yshift=-3.5mm]\SVTree{\n}{Mid}{\r}{\l}{\q}\end{scope}
+         \node[Code,below=2.5mm of $(\n a.south)!.5!(\n b.south)$] (\n c) {\f};
+         \begin{scope}[shift={($(\n c.south)+(0,-6.5mm)$)}]\SVTree{\n y}{Mid}{\rr}{\ll}{\qq}\end{scope}
+         \draw[Step] (\n c) -- (\n yr);
+      \end{scope}}
+\end{tikzpicture}\end{fullwidth}
+\par\vspace{2.5mm}
+{\centering\onslide<4->{\small The \Sv{structure} stays, the \Vv{values} change: the type decides which is which\par}}
+\PinguSays<4->{we often call the structure\\the \emph{context}}
+\NoteRef{structure-or-values}
+\end{frame}
+
+\begin{frame}{Functors}
+\ShowPerson{eilenberg}<3->
+\ShowPerson{maclane}<3->[52mm]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+   \node[BlobC,minimum width=44mm,minimum height=24mm] (C) at (0,0) {};
+   \node[Lbl,anchor=south,text=ArrF] at (C.north) {category \(\mathcal{C}\)};
+   \node[Obj,InC] (a) at ([xshift=-9mm]C.center) {\(A\)}; \node[Obj,InC] (b) at ([xshift=9mm]C.center) {\(B\)};
+   \draw[Arr,Af] (a) -- node[above,font=\small] {\(f\)} (b);
+   \node[BlobD,minimum width=44mm,minimum height=24mm,right=26mm of C,visible on=<2->] (D) {};
+   \node[Lbl,anchor=south,text=ArrG,visible on=<2->] at (D.north) {category \(\mathcal{D}\)};
+   \node[Obj,InD,visible on=<2->] (fa) at ([xshift=-9.5mm]D.center) {\(F A\)}; \node[Obj,InD,visible on=<2->] (fb) at ([xshift=9.5mm]D.center) {\(F B\)};
+   \draw[Arr,Ag,visible on=<3->] (fa) -- node[above,font=\small] {\(F f\)} (fb);
+   % solid: a functor is given, dashed arrows are reserved for arrows that exist uniquely
+   \draw[Arr,CT,visible on=<2->] (a.north) to[bend left=22] node[above,font=\small] {\(F\)} (fa.north);
+   \draw[Arr,CT,visible on=<2->] (b.south) to[bend right=22] (fb.south);
+\end{tikzpicture}
+\end{fullwidth}
+{\centering\small\color{Mid}functors: Eilenberg and Mac Lane, 1942. Categories in 1945\supercite{eilenberg1942natural,eilenberg1945natural}\par}
+\vspace{1mm}
+\begin{itemize}
+   \item<3-> A \ct{functor} \(F\) maps objects to objects and arrows to arrows
+   \item<4-> It keeps the structure: \(F\,\symit{id} = \symit{id}\) and \(F(\cG \circ \cF) = F \cG \circ F \cF\)
+   % \item<5-> So isomorphisms stay isomorphisms
+\end{itemize}
+\PinguNoteLeft<4->{we may prove\\such laws later}
+\NoteRef{functors}
+\end{frame}
+
+\begin{frame}[fragile]{Functors in Haskell}
+\lstfs[1]{8}%
+\newcommand\FC[4]{\node[Card=44mm,minimum height=16mm] at #1 {\textbf{\small\T{#2}}\\[1.5mm]\ihs{#3}\enspace\(\mapsto\)\enspace #4};}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46.5mm,y=19mm]
+   \FC{(0,0)}{Maybe}{Just 2}{\mhsEvalOf{fmap (+1) (Just 2)}}
+   \FC{(1,0)}{[]}{[1,2]}{\mhsEvalOf{fmap (+1) [1,2]}}
+   \FC{(2,0)}{Either String}{Left "e"}{\mhsEvalOf{fmap (+1) (Left "e" :: Either String Int)}}
+   \FC{(0,-1)}{(,) String}{("log",2)}{\mhsEvalOf{fmap (+1) ("log",2)}}
+   \FC{(1,-1)}{(->) Int}{(*2)}{\ihs{(+1) . (*2)}}
+   \FC{(2,-1)}{IO}{readLn}{read, add 1}
+\end{tikzpicture}\end{fullwidth}
+\par\vspace{4mm}
+{\centering\small each card shows \ihs{x} \(\mapsto\) \ihs{fmap (+1) x}\supercite[ch.~7]{milewski2019}\par}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/Optional.html\#map(java.util.function.Function)}{\T{Optional.map}, \T{Stream.map}, but no \T{Functor}: no higher kinds}
+\NoteRef{functors-in-haskell}
+\end{frame}
+
+
+\begin{frame}[fragile,applied,optional]{Applying the Functor Laws}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.537\linewidth}
+\Laws{\ihs{fmap id = id}\\[1mm]\ihs{fmap (g . f) = fmap g . fmap f}}\\[4mm]
+\begin{itemize}
+   \item<2-> \textbf{Fusion}: two passes become one\supercite[ch.~7]{milewski2019}
+   \item<3-> \textbf{Shape}: \ihs{fmap} never adds, drops, or reorders values
+\end{itemize}
+\column{0.393\linewidth}\lstfs[1]{8}%
+\begin{minted}{mhs}
+-- breaks fmap id = id
+data Box a = Full a | Empty
+instance Functor Box where
+  fmap _ _ = Empty
+\end{minted}
+\end{columns}
+\vspace{2mm}
+\begin{ghcisession}[start=4]
+length (fmap show [1, 2, 3]) == length [1, 2, 3]
+\end{ghcisession}
+\end{fullwidth}
+\NoteRef{applying-the-functor-laws}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Natural Transformations}
+\lstfs[1]{8}%
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.550\linewidth}
+\begin{itemize}
+   \item<1-> An arrow \(F a \to G a\) for each \(a\)\supercite[ch.~10]{milewski2019}
+   \item<2-> \ct{Naturality}: squares commute
+   \item<3-> Polymorphic functions\supercite{wadler1989theorems}
+\end{itemize}
+\vspace{3mm}
+\begin{ghcisession}[start=4]
+fmap show (listToMaybe [1, 2])
+listToMaybe (fmap show [1, 2])
+\end{ghcisession}
+\column{0.380\linewidth}
+\centering
+\begin{tikzcd}[ampersand replacement=\&,column sep=13mm,row sep=11mm,cells={nodes={font=\small,inner xsep=2.5pt}}]
+   \mathtt{[a]} \arrow[r,cf,"\mathtt{fmap\,g}"] \arrow[d,cc,"\eta"'] \& \mathtt{[b]} \arrow[d,cc,"\eta"] \\
+   \mathtt{Maybe\ a} \arrow[r,cg,visible on=<2->,"\mathtt{fmap\,g}"'] \& \mathtt{Maybe\ b}
+\end{tikzcd}\\[1mm]
+{\footnotesize\color{Mid}\(\eta\) = \T{listToMaybe}}
+\end{columns}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/Stream.html\#findFirst()}{\T{map}, then \T{findFirst} is \T{findFirst}, then \T{map} (for non-null \T{g})}
+\end{fullwidth}
+\NoteRef{natural-transformations}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Reasoning with Diagrams}
+\centering
+\begin{tikzcd}[ampersand replacement=\&,column sep=18mm,row sep=11mm]
+   \mathtt{[a]} \arrow[r,cf,"\mathtt{fmap\,f}"] \arrow[d,cc,"\eta"'] \& \mathtt{[b]} \arrow[r,cf,visible on=<2->,"\mathtt{fmap\,g}"] \arrow[d,cc,"\eta"] \& |[visible on=<2->]| \mathtt{[c]} \arrow[d,cc,visible on=<2->,"\eta"] \\
+   \mathtt{Maybe\ a} \arrow[r,cg,"\mathtt{fmap\,f}"'] \& \mathtt{Maybe\ b} \arrow[r,cg,visible on=<2->,"\mathtt{fmap\,g}"'] \& |[visible on=<2->]| \mathtt{Maybe\ c}
+\end{tikzcd}\\[.5mm]
+{\footnotesize\color{Mid}\(\eta\) = \T{listToMaybe}}\par
+\vspace{2mm}
+{\small Each square is an \ct{equation}, so the glued rectangle is one too:\supercite[ch.~10]{milewski2019}\par}
+\vspace{1mm}
+\onslide<2->{\small
+\(\begin{aligned}
+   &\eta \circ \mathtt{fmap}\,g \circ \mathtt{fmap}\,f\\
+   ={}&\mathtt{fmap}\,g \circ \eta \circ \mathtt{fmap}\,f && \text{\color{Mid}\footnotesize right square}\\
+   ={}&\mathtt{fmap}\,g \circ \mathtt{fmap}\,f \circ \eta && \text{\color{Mid}\footnotesize left square}
+\end{aligned}\)\par}
+\vspace{2mm}
+\onslide<3->{\footnotesize\ihs{listToMaybe . map g . map f}\\\ihs{== fmap g . fmap f . listToMaybe}\par}
+\NoteRef{reasoning-with-diagrams}
+\end{frame}
+
+
+\section[Abstractions]{Abstractions in Haskell}
+\SectionPage[construction helmet]{3}{Abstractions in Haskell}{from Semigroup to Applicative, step by step}
+
+\begin{frame}[optional]{From Magmas to Groups}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=34.5mm,y=-4.3mm,Row/.style={font=\footnotesize,inner sep=0pt,anchor=base}]
+   % every card lists all its laws on the same rows: the inherited ones in gray, the new one in black
+   \def\Old{\color{Mid}}
+   \foreach \x/\o/\n/\l/\e/\c in {
+         0/1/Magma/{\(x \cdot y \in M\)}/{\T{(-)} on \T{Int}}/{},
+         1/2/Semigroup/{{\Old\(x \cdot y \in M\)},\((x \cdot y) \cdot z = x \cdot (y \cdot z)\)}/{\T{max} on \T{Integer}}/semicategory,
+         2/3/Monoid/{{\Old\(x \cdot y \in M\)},{\Old associative},\(e \cdot x = x = x \cdot e\)}/{\T{(+)}, \T{0} on \T{Natural}}/category,
+         3/4/Group/{{\Old\(x \cdot y \in M\)},{\Old associative},{\Old neutral \(e\)},\(x \cdot x^{-1} = e = x^{-1} \cdot x\)}/{\T{(+)}, \T{negate} on \T{Int}}/groupoid}
+   {
+      \begin{scope}[visible on=<\o->]
+         \node[Card=31.5mm,minimum height=39mm,anchor=north] (s\x) at (\x,-.5) {};
+         \node[Row,font=\small\bfseries] at (\x,1) {\n};
+         \foreach \r [count=\i] in \l \node[Row] at (\x,1.9+\i) {\r};
+         \node[Row,font=\scriptsize] at (\x,7.1) {\e};
+         \node[Row,text=CT] at (\x,8.2) {\c};
+      \end{scope}
+   }
+   \foreach \a/\b/\o in {0/1/2,1/2/3,2/3/4} \draw[Arr,visible on=<\o->] (s\a) -- (s\b);
+\end{tikzpicture}\end{fullwidth}
+\vspace{3mm}
+\begin{itemize}
+   \item<2-> Each step adds one law, the gray ones carry over
+   \item<5-> With many objects: \textcolor{CT}{semicategory}, \textcolor{CT}{category}, \textcolor{CT}{groupoid}\supercite{maclane1998cwm}
+\end{itemize}
+\NoteRef{from-magmas-to-groups}
+\end{frame}
+
+\begin{frame}[fragile]{Semigroup\De{Halbgruppe}}
+\HierMap{1}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.361\linewidth}
+\centering
+\begin{tikzpicture}
+   \node[Obj] (s) at (0,0) {\(\ast\)};
+   \draw[Arr,Af] (s) to[out=150,in=210,looseness=7] node[left] {\(x\)} (s);
+   \draw[Arr,Ag] (s) to[out=30,in=-30,looseness=7] node[right] {\(y\)} (s);
+   \draw[Arr,CT,visible on=<2->] (s) to[out=60,in=120,looseness=7] node[above] {\(x \cdot y\)} (s);
+\end{tikzpicture}\\[2mm]
+\onslide<5->{{\footnotesize\color{Mid}values are arrows, \T{<>} composes:\\\(x\) = \T{"ab"}, \(y\) = \T{"c"}, \(x \cdot y\) = \T{"abc"}\par}}\vspace{2mm}
+\onslide<3->{\Laws{\((x \cdot y) \cdot z = x \cdot (y \cdot z)\)}}
+\column{0.569\linewidth}\lstfs[1]{8}%
+\onslide<2->{Like \T{+} and \T{*} of \T{sumList}: where the brackets go does not matter.}\\[4mm]
+\begin{uncoverenv}<4->
+\begin{minted}{mhs}
+class Semigroup a where
+  (<>) :: a -> a -> a
+\end{minted}
+\end{uncoverenv}
+\begin{ghcisession}[start=5]
+"ab" <> "c"
+getMax (Max 3 <> Max 5)
+\end{ghcisession}
+\end{columns}
+\end{fullwidth}
+\NoteRef{semigroup}
+\end{frame}
+
+\begin{frame}[fragile]{Monoid}
+\HierMap{2}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.361\linewidth}
+\centering
+\begin{tikzpicture}
+   \node[Obj] (s) at (0,0) {\(\ast\)};
+   \draw[Arr,Af] (s) to[out=150,in=210,looseness=7] node[left] {\(x\)} (s);
+   \draw[Arr,Ag] (s) to[out=30,in=-30,looseness=7] node[right] {\(y\)} (s);
+   \draw[Arr,visible on=<2->] (s) to[out=60,in=120,looseness=7] node[above] {\(e = \symit{id}\)} (s);
+\end{tikzpicture}\\[2mm]
+\onslide<5->{{\footnotesize\color{Mid}\(x\) = \T{"fun"}, \(y\) = \T{"ctional"}, \(e\) = \T{""}\par}}\vspace{2mm}
+\onslide<3->{\Laws{\((x \cdot y) \cdot z = x \cdot (y \cdot z)\)\\[1mm]\(e \cdot x = x = x \cdot e\)}}
+\column{0.569\linewidth}\lstfs[1]{8}%
+\onslide<2->{Remember \T{sumList}: \T{+} with \T{0}, \T{*} with \T{1}. Now with a neutral element.\supercite[ch.~3]{milewski2019}}\\[3mm]
+\begin{uncoverenv}<4->
+\begin{minted}{mhs}
+class Semigroup a => Monoid a where
+  mempty :: a
+\end{minted}
+\end{uncoverenv}
+\begin{ghcisession}[start=5]
+[1, 2] <> [3] <> mempty
+mconcat ["fun", "ctional"]
+\end{ghcisession}
+\end{columns}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/Stream.html\#reduce(T,java.util.function.BinaryOperator)}{the documentation of \T{Stream.reduce} demands exactly these laws}
+\end{fullwidth}
+\NoteRef{monoid}
+\end{frame}
+
+\begin{frame}[fragile,optional,applied]{Lists and Parallel Folds}
+\HierMap{2}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.384\linewidth}
+\centering
+\begin{tikzcd}[ampersand replacement=\&,column sep=18mm,row sep=12mm]
+   \mathtt{a} \arrow[r,"\mathtt{(:[])}"] \arrow[dr,cf,"\mathtt{f}"'] \& \mathtt{[a]} \arrow[d,cc,dashed,visible on=<2->,"\mathtt{foldMap\,f}"] \\
+   \& \mathtt{m}
+\end{tikzcd}\\[2mm]
+\onslide<2->{\small Lists are the \ct{\Term{free}{built from the operations alone, with no equations beyond the laws: \T{[1, 2]} and \T{[2, 1]} stay different.}} monoid: every \ihs{f} extends to exactly one \Term{homomorphism}{a function that keeps the structure: \T{h (x <> y) = h x <> h y} and \T{h mempty = mempty}.}\supercite{yorgey2012monoids}\par}
+\column{0.546\linewidth}
+\centering
+\begin{tikzpicture}[x=.62cm,y=.62cm]
+   \foreach \i in {1,...,8} \node[Obj,minimum size=5mm,font=\scriptsize,visible on=<3->] (l\i) at (\i,0) {\i};
+   \foreach \i/\j/\s in {1/2/3,3/4/7,5/6/11,7/8/15}{
+      \node[Chunk,font=\scriptsize,visible on=<4->] (p\i) at ({(\i+\j)/2},1.5) {\(\s\)};
+      \draw[Arr,thin,visible on=<4->] (l\i) -- (p\i); \draw[Arr,thin,visible on=<4->] (l\j) -- (p\i);}
+   \node[Chunk,font=\scriptsize,visible on=<5->] (q1) at (2.5,3) {\(10\)};
+   \node[Chunk,font=\scriptsize,visible on=<5->] (q2) at (6.5,3) {\(26\)};
+   \foreach \a/\b in {p1/q1,p3/q1,p5/q2,p7/q2} \draw[Arr,thin,visible on=<5->] (\a) -- (\b);
+   \node[Chunk,font=\scriptsize,visible on=<6->] (r) at (4.5,4.4) {\(36\)};
+   \draw[Arr,thin,visible on=<6->] (q1) -- (r); \draw[Arr,thin,visible on=<6->] (q2) -- (r);
+\end{tikzpicture}\\[1mm]
+\onslide<3->{\small Split, combine in parallel, join\supercite{dean2008mapreduce}\par}
+\end{columns}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/package-summary.html\#Associativity}{\T{parallelStream().reduce} is correct only for associative operations}
+\end{fullwidth}
+\NoteRef{lists-and-parallel-folds}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Monoids Build Monoids}
+\HierMap{2}
+\begin{ghcisession}
+("ab", [1]) <> ("c", [2])
+sortBy (comparing length <> compare) ["bb", "a", "c"]
+appEndo (foldMap Endo [(+1), (*2)]) 5
+\end{ghcisession}
+\vspace{2mm}
+\begin{itemize}
+   \item<2-> Tuples of monoids are \ct{monoids}
+   \item<3-> Comparators chain with \ihs{<>}
+   \item<4-> Composition is a monoid: \ihs{Endo}
+\end{itemize}
+\NoteRef{monoids-build-monoids}
+\end{frame}
+
+\begin{frame}[fragile]{Functor}
+\HierMap{3}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.361\linewidth}
+\centering
+\begin{tikzcd}[ampersand replacement=\&,column sep=18mm,row sep=12mm]
+   \mathtt{a} \arrow[r,cf,"\mathtt{g}"] \arrow[d,mapsto,Mid,"\mathtt{f}"'] \& \mathtt{b} \arrow[d,mapsto,Mid,"\mathtt{f}"] \\
+   |[visible on=<2->]| \mathtt{f\ a} \arrow[r,cg,visible on=<2->,"\mathtt{fmap\,g}"'] \& |[visible on=<2->]| \mathtt{f\ b}
+\end{tikzcd}\\[3mm]
+\onslide<3->{\Laws{\ihs{fmap id = id}\\[1mm]\ihs{fmap (h . g)}\\\ihs{= fmap h . fmap g}}}
+\column{0.569\linewidth}\lstfs[1]{8}%
+\onslide<2->{The \textbf{container} stays, only the \textbf{values} change. In Haskell, functors are \ct{endofunctors}: from Hask to Hask\supercite{yorgey2009typeclassopedia}}\\[3mm]
+\begin{uncoverenv}<4->
+\begin{minted}{mhs}
+class Functor f where
+  fmap :: (a -> b) -> f a -> f b
+\end{minted}
+\end{uncoverenv}
+\begin{ghcisession}[start=5]
+fmap show [1, 2, 3]
+\end{ghcisession}
+\end{columns}
+\end{fullwidth}
+\NoteRef{functor}
+\end{frame}
+
+\Takeaway*[takeaway-write-once]{Relying on Functors}{%
+   \begin{tikzpicture}[P/.style={Cls,font=\footnotesize\ttfamily,text width=24mm,align=center,MonoSpaces}]
+      \node[Cls,draw=CT,text=CT,font=\small\ttfamily] (s) at (0,0) {doubleAll = fmap (* 2)};
+      \foreach \t/\x [count=\i] in {{[Int]}/-4.5,{Maybe Int}/-1.5,{Tree Int}/1.5,{Map k Int}/4.5} {\node[P] (t\i) at (\x,-1.6) {\t}; \draw[Arr,Mid] (s) -- (t\i);}
+   \end{tikzpicture}}{every type that keeps the promise gets the code for free}
+
+\begin{frame}[fragile]{Applicative}
+\HierMap{5}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.380\linewidth}
+\centering
+% a plain picture instead of tikzcd: both arrows get the same length
+\begin{tikzpicture}[Ob/.append style={font=\small,inner xsep=3pt},CdArr/.style={-{Kite[length=1.6mm,width=1.2mm]},thick,line cap=round,draw=Ink,shorten >=2.5pt,shorten <=2.5pt}]
+   % sources end and targets start at the same x, one gap of \ArrGap apart
+   \def\ArrGap{24mm}
+   \coordinate (o);
+   \node[Ob,anchor=east] (p) at (o) {\(\mathtt{(f\ a,\ f\ b)}\)}; \node[Ob,anchor=west] (fp) at ([xshift=\ArrGap]o) {\(\mathtt{f\ (a,\ b)}\)};
+   \draw[CdArr,CT] (p) -- node[above,font=\scriptsize] {\T{liftA2 (,)}} (fp);
+   \begin{scope}[visible on=<2->]
+      \coordinate (o2) at ([yshift=-13mm]o);
+      \node[Ob,anchor=east] (u) at (o2) {\(\mathtt{()}\)}; \node[Ob,anchor=west] (fu) at ([xshift=\ArrGap]o2) {\(\mathtt{f\ ()}\)};
+      \draw[CdArr,CT] (u) -- node[above,font=\footnotesize] {\T{pure}} (fu);
+   \end{scope}
+\end{tikzpicture}\\[5mm]
+\onslide<3->{\Laws{combining boxes:\\grouping does not matter,\\\T{pure ()} changes nothing}}
+\column{0.550\linewidth}\lstfs[1]{8}%
+\onslide<2->{\ihs{fmap (+) (Just 1)}, or \ihs{(+) <$> Just 1}, is \ihs{Just (1 +)}: a function in a box. \ihs{<*>} applies it to a value in a box. The boxes do not depend on each other.\supercite{mcbride2008applicative}}\\[3mm]
+\begin{uncoverenv}<4->
+\begin{minted}{mhs}
+class Functor f => Applicative f where
+  pure  :: a -> f a
+  (<*>) :: f (a -> b) -> f a -> f b
+\end{minted}
+\end{uncoverenv}
+\begin{ghcisession}[start=5]
+(+) <$> Just 1 <*> Just 2
+\end{ghcisession}
+\end{columns}
+\end{fullwidth}
+\NoteRef{applicative}
+\end{frame}
+
+\begin{frame}{Ask for as Little Power as You Need}
+\HierMap{5}
+\centering
+{\small A type class in a signature is a promise about what the code may do.\par}
+\vspace{2mm}
+\begin{fullwidth}
+\begin{columns}[t,onlytextwidth]
+\column{0.48\linewidth}
+\centering
+\makebox[\linewidth][c]{\begin{minipage}{95mm}\centering\ihs{scale :: Functor f => f Int -> f Int}\end{minipage}}\\[1mm]
+{\small may only \ihs{fmap}, so the shape stays\par}
+\vspace{1mm}
+{\small works for lists, \ihs{Maybe}, trees, \ihs{IO}, functions\par}
+\column{0.48\linewidth}
+\centering
+\uncover<2->{\makebox[\linewidth][c]{\begin{minipage}{95mm}\centering\ihs{step :: Monad m => m Int -> m Int}\end{minipage}}\\[1mm]
+{\small may also branch on results, so the shape can change\par}
+\vspace{1mm}
+{\small only for types with a \ihs{Monad} instance\par}}
+\end{columns}
+\end{fullwidth}
+\vspace{3mm}
+\begin{itemize}
+   \item<3-> The weaker the constraint, the more types are accepted
+   \item<4-> The caller learns more: \ihs{scale} cannot drop or add elements
+\end{itemize}
+\NoteRef{takeaway-power}
+\end{frame}
+
+
+
+
+
+\section{Monads}
+\SectionPage[wings wave]{4}{Monads}{when the next step needs the last result}
+
+\begin{frame}{Why Monads?}
+\HierMap{7}
+\centering
+{\small Haskell functions are \ct{pure}: same input, same output, no side effects.\par} % \\
+% An effect like failing, logging, or input shows up in the type: \ihs{a -> m b}
+\vspace{2mm}
+\begin{tikzpicture}[N/.style={font=\small\ttfamily}]
+   \node[N] (a) {a}; \node[N,right=28mm of a] (mb) {m b};
+   \node[N,right=16mm of mb,visible on=<2->] (b) {b}; \node[N,right=28mm of b,visible on=<2->] (mc) {m c};
+   \draw[Arr,Af] (a) -- node[above,font=\footnotesize\ttfamily] {f} (mb);
+   \draw[Arr,Ag,visible on=<2->] (b) -- node[above,font=\footnotesize\ttfamily] {g} (mc);
+   \node[font=\small,text=Mid,visible on=<3-| handout:0>] at ($(mb)!.5!(b)$) {\(\neq\)};
+   \draw[Arr,CT,visible on=<4->] (mb) to[bend left=30] node[above,font=\footnotesize\ttfamily] {(>>= g)} (mc);
+   \draw[Arr,CT,visible on=<5->] (a) to[bend right=16] node[below,font=\footnotesize\ttfamily] {f >\kern0pt=\kern0pt> g} (mc);
+\end{tikzpicture}
+\vspace{1mm}
+\begin{itemize}
+   \item<3-> \ihs{g . f} does not type: \ihs{m b} is no \ihs{b}
+   \item<4-> A monad bridges this gap: \ihs{(>>=)}
+   \item<5-> So effectful functions compose again: \ihs{f >=> g} is first \ihs{f}, then \ihs{g}
+\end{itemize}
+\NoteRef{why-monads}
+\end{frame}
+
+\begin{frame}[fragile]{Monad}
+\HierMap{7}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.407\linewidth}
+\centering
+\begin{tikzpicture}
+   \node[Val] (x1) {a}; \node[Box,fit=(x1),inner sep=3pt] (b1) {}; \node[Box,fit=(b1),inner sep=3pt] (c1) {};
+   \node[Val,right=11mm of c1] (x2) {a}; \node[Box,fit=(x2),inner sep=3pt] (b2) {};
+   \draw[Arr,CT] (c1) -- node[above,font=\footnotesize] {\T{join}} (b2);
+   \node[Lbl,below=1mm of c1] {\T{m (m a)}};
+   \node[Val,right=10mm of b2,visible on=<2->] (x3) {a};
+   \draw[Arr,CT,visible on=<2->] (x3) -- node[above,font=\footnotesize] {\T{pure}} (b2);
+   \node[Lbl,below=1mm of b2] {\T{m a}};
+\end{tikzpicture}\\[4mm]
+\onslide<3->{\Laws{the monoid laws again:\\\T{join} combines, \T{pure} is neutral\supercite{maclane1998cwm}}}
+\column{0.523\linewidth}\lstfs[1]{8}%
+\onslide<2->{The next step can use the last result. \T{fmap f} on an \T{m a} gives an \T{m (m b)}: \T{join} flattens it, so \ihs{x >>= f = join (fmap f x)}.\supercite[ch.~20]{milewski2019}}\\[3mm]
+\begin{uncoverenv}<4->
+\begin{minted}{mhs}
+class Applicative m => Monad m where
+  (>>=) :: m a -> (a -> m b) -> m b
+\end{minted}
+\end{uncoverenv}
+\begin{ghcisession}[start=5]
+join [[1, 2], [3]]
+\end{ghcisession}
+\end{columns}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CompletableFuture.html\#thenCompose(java.util.function.Function)}{\T{thenCombine} if independent, \T{thenCompose} if dependent}
+\end{fullwidth}
+\NoteRef{monad}
+\end{frame}
+
+\begin{frame}[fragile,optional]{join Flattens}
+\HierMap{7}
+\centering
+\begin{tikzpicture}
+   \Container{p}{(0,1.1)}{1,2}{2}\node[Box,fit=(p),inner sep=3pt] (pp) {};
+   \Container{q}{(2.2,1.1)}{3}{1}\node[Box,fit=(q),inner sep=3pt] (qq) {};
+   \node[Box,fit=(pp)(qq),inner sep=3pt] (outer) {};
+   \Container{r}{(5.9,1.1)}{1,2,3}{3}
+   \draw[Arr,CT,visible on=<1->] (outer) -- node[above,font=\footnotesize\ttfamily] {join} (r);
+   \node[Val,visible on=<2->] (j) at (1.5,-.5) {1}; \node[Box,fit=(j),inner sep=3pt,visible on=<2->] (j1) {}; \node[Box,fit=(j1),inner sep=3pt,visible on=<2->] (j2) {};
+   \node[Val,visible on=<2->] (k) at (6.8,-.5) {1}; \node[Box,fit=(k),inner sep=3pt,visible on=<2->] (k1) {};
+   \draw[Arr,CT,visible on=<2->] (j2) -- node[above,font=\footnotesize\ttfamily] {join} (k1);
+\end{tikzpicture}
+\vspace{4mm}
+\begin{itemize}
+   \item<1-> Lists in a list: one list
+   \item<2-> \ihs{Just (Just 1)}: \ihs{Just 1}
+   \item<3-> \ihs{m >>= f} is \ihs{join (fmap f m)}
+\end{itemize}
+\NoteRef{join-flattens}
+\end{frame}
+
+\begin{frame}[fragile,applied]{Maybe: Failing Fast}
+\HierMap{7}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[Step/.style={Cls,font=\footnotesize\ttfamily,fill=white,text width=22mm,align=center,MonoSpaces,minimum height=8mm},
+      Lane/.style={line width=1.2pt,line cap=round},V/.style={font=\footnotesize\ttfamily}]
+   % the steps on the upper track, each with a branch down to the lower track of Nothing
+   \node[Step] (a) {parseAge};
+   \node[Step,right=10mm of a,visible on=<2->] (b) {checkAdult};
+   \node[Step,right=10mm of b,visible on=<3->,draw=Mid,text=Mid] (c) {greet};
+   \coordinate (start) at ([xshift=-12mm]a.west);
+   \coordinate (end) at ([xshift=12mm]c.east);
+   \coordinate (low) at ([yshift=-10mm]a.south);
+   \begin{pgfonlayer}{background}% declared by tikzpingus
+      \draw[Lane,ArrF!45] (start) -- (end);
+      \draw[Lane,ArrG!40] ([xshift=8pt]a.south |- low) -- (end |- low);
+      \foreach \s/\o in {a/1,b/2,c/3} \draw[Lane,ArrG!40,rounded corners=8pt,visible on=<\o->] (\s.south) -- (\s.south |- low) -- ++(12mm,0);
+   \end{pgfonlayer}
+   \node[V,text=ArrF,anchor=south] at ([yshift=1.5mm]$(start |- a.north)!.5!(a.north west)$) {"17"};
+   \node[V,text=ArrG,anchor=south,visible on=<2->] at ([yshift=1.5mm]$(a.north east)!.5!(b.north west)$) {Just 17};
+   \draw[-{Kite[length=1.60mm,width=1.28mm]},line width=1.6pt,ArrG,rounded corners=8pt,visible on=<3->] (b.south) |- (end |- low);
+   \node[V,text=ArrG,anchor=north east,visible on=<3->] at ([yshift=-2mm]end |- low) {Nothing};
+   \node[font=\footnotesize,text=Mid,anchor=south,visible on=<3->] at ([yshift=1.5mm]c.north) {skipped};
+\end{tikzpicture}\end{fullwidth}
+\vspace{4mm}
+\begin{itemize}
+   \item<2-> A value travels on the upper track
+   \item<3-> A failure leaves it, and later steps are skipped
+\end{itemize}
+\NoteRef{maybe-two-tracks}
+\end{frame}
+
+\begin{frame}[fragile,optional,applied]{Lists: A Tree of Choices}
+\HierMap{7}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.493\linewidth}
+\centering
+\begin{tikzpicture}[x=1cm,y=1.05cm,T/.style={Val,font=\footnotesize\ttfamily,minimum width=7mm}]
+   \node[T,minimum width=14mm] (r) at (1.5,2) {[1, 2]};
+   \node[T,visible on=<2->] (a) at (.3,1) {1}; \node[T,visible on=<2->] (b) at (2.7,1) {2};
+   \draw[Arr,Af,visible on=<2->] (r) -- (a); \draw[Arr,Af,visible on=<2->] (r) -- (b);
+   \foreach \p/\x/\v [count=\i] in {a/-.4/'a',a/1/'b',b/2/'a',b/3.4/'b'}{
+      \node[T,visible on=<3->] (leaf\i) at (\x,0) {\v}; \draw[Arr,Ag,visible on=<3->] (\p) -- (leaf\i);}
+\end{tikzpicture}
+\column{0.437\linewidth}
+\begin{itemize}
+   \item<2-> Each element branches out
+   \item<3-> All paths are collected
+\end{itemize}
+\end{columns}
+\vspace{3mm}
+\begin{ghcisession}[start=4]
+do { x <- [1,2]; y <- "ab"; pure (x, y) }
+\end{ghcisession}
+\end{fullwidth}
+\NoteRef{lists-a-tree-of-choices}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Intuitions for Monads}
+\HierMap{7}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46mm,y=16mm]
+   \foreach \x/\y/\n/\d in {0/0/[]/{nondeterminism:\\all choices},1/0/Maybe/{failure\\\strut},2/0/Either e/{failure with a reason\\\strut},
+         0/-1/{(,) w}/{a log\\\strut},1/-1/{(->) r}/{a shared environment\\\strut},2/-1/IO/{the outside world\\\strut}}
+      \node[Card=43mm,minimum height=15mm] at (\x,\y) {\textbf{\small\T{\n}\strut}\\[.5mm]\d};
+\end{tikzpicture}\end{fullwidth}
+\NoteRef{intuitions-for-monads}
+\end{frame}
+
+\begin{frame}[fragile]{Monad and Applicative}
+\HierMap{7}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.581\linewidth}\lstfs[1]{8}%
+\begin{mhsfile}{SafeDiv.hs}
+safeDiv :: Int -> Int -> Maybe Int
+safeDiv _ 0 = Nothing
+safeDiv x y = Just (x `div` y)
+\end{mhsfile}
+\begin{ghcisession}[start=2]
+safeDiv 100 5 >>= safeDiv 1000
+safeDiv 100 200 >>= safeDiv 1000
+\end{ghcisession}
+\column{0.349\linewidth}\lstfs[1]{8}%
+\onslide<4->{The second step depends on the first: no \ihs{Applicative} can do this.\supercite{lindley2011idioms}}\\[4mm]
+\onslide<5->{\Laws{\ihs{pure x >>= f = f x}\\\ihs{m >>= pure = m}\\[1mm]\ihs{(f >=> g) >=> h}\\\ihs{= f >=> (g >=> h)}}}\\[2mm]
+\onslide<5->{{\footnotesize\color{Mid}since 2015, every \T{Monad}\\must also be an \T{Applicative}\par}}
+\end{columns}
+\end{fullwidth}
+\NoteRef{monad-and-applicative}
+\end{frame}
+\mhsGhcUnload
+
+\begin{frame}[fragile,applied]{do-Notation}
+\HierMap{7}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.456\linewidth}
+\begin{minted}{mhs}
+do x <- m
+   y <- f x
+   pure (g x y)
+\end{minted}
+\column{0.038\linewidth}\centering\(=\)
+\column{0.437\linewidth}
+\begin{minted}{mhs}
+m >>= \x ->
+  f x >>= \y ->
+    pure (g x y)
+\end{minted}
+\end{columns}
+\vspace{4mm}
+\begin{itemize}
+   \item<2-> Looks imperative, is only \ihs{>>=}
+   \item<3-> A later line may use an earlier result
+\end{itemize}
+\Lam{https://www.haskell.org/onlinereport/haskell2010/haskellch3.html\#x8-470003.14}{each \T{x <-} becomes a binder \(\lambda x.\) (the Haskell Report)}
+\end{fullwidth}
+\NoteRef{do-notation}
+\end{frame}
+
+\begin{frame}[optional]{Kleisli Category}
+\HierMap{7}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[node distance=12.5mm,Ty/.style={font=\tiny\ttfamily,text=Mid,inner sep=1.5pt}]
+   \node[Obj] (a) {\T{a}}; \node[Obj,right=of a] (b) {\T{b}}; \node[Obj,right=of b] (c) {\T{c}};
+   \draw[Arr,Af] (a) -- node[above,font=\footnotesize\ttfamily] {f} node[below,Ty] {a -> m b} (b);
+   \draw[Arr,Ag] (b) -- node[above,font=\footnotesize\ttfamily] {g} node[below,Ty] {b -> m c} (c);
+   \draw[Arr,CT,visible on=<2->] (a) to[bend right=40] node[below,font=\footnotesize\ttfamily,align=center] {f >\kern0pt=\kern0pt> g\\[-.3ex]{\tiny\color{Mid}a -> m c}} (c);
+   \draw[Arr,visible on=<3->] (a) to[out=120,in=60,looseness=6] node[above,font=\footnotesize\ttfamily] (pl) {pure} (a);
+   \node[Note,anchor=east,visible on=<3->] (pn) at ([xshift=-4mm]pl.west) {the identity arrow, from \T{a} to \T{a}:\\\T{pure :: a -> m a}};
+   \draw[NoteArr,visible on=<3->] (pn.east) -- (pl.west);
+   \node[rounded corners=5pt,fill=Wash,inner sep=5pt,align=center,font=\small,right=6mm of c,visible on=<4->] {\ihs{pure >=> f = f}\\\ihs{f >=> pure = f}\\\ihs{(f >=> g) >=> h}\\\ihs{= f >=> (g >=> h)}};
+\end{tikzpicture}\\[2mm]
+{\small Objects are plain types, the \T{m} belongs to the arrow: \T{f :: a -> m b} goes from \T{a} to \T{b}\par}
+\end{fullwidth}
+\vspace{1mm}
+\begin{itemize}
+   \item<4-> The monad laws are the \ct{category laws}\supercite{kleisli1965}
+\end{itemize}
+\NoteRef{kleisli-category}
+\end{frame}
+
+
+\begin{frame}{What Is a Monad?}
+\ShowPerson{wadler}<2->
+\ShowPerson{maclane}[39mm]
+\vspace{9mm}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[Q/.style={Card=63mm,minimum height=36mm,font=\small,align=left}]
+   \node[Q] (m) at (0,0) {\enquote{All told, a monad in \(X\) is just a monoid in the category of endofunctors of \(X\), with product \(\times\) replaced by composition of endofunctors and unit set by the identity endofunctor.}\\[2mm]\textbf{Saunders Mac Lane}\supercite[ch.~VI]{maclane1998cwm}};
+   \begin{scope}\node[Q,visible on=<2->] (w) at (6.8,0) {\enquote{Wadler tries to appease critics by explaining that \enquote{a monad is a monoid in the category of endofunctors, what's the problem?}}\\[2mm]\textbf{James Iry}, in a parody of the history of programming languages\supercite{iry2009}};\end{scope}
+\end{tikzpicture}\end{fullwidth}
+\NoteRef{just-a-monoid}
+\end{frame}
+
+\begin{frame}{Mac Lane and Correspondence}
+\begin{fullwidth}\centering
+\begin{tikzpicture}
+   \MonoidPanel{L}{CatC}{ArrF}{monoid among types}{\(M \times M\)}{\(M\)}{\(1\)}{\T{(<>)}}{\T{mempty}}
+   \begin{scope}[visible on=<2->]
+      \begin{scope}[shift={([xshift=7mm+31mm]L.east)}]% the panels are 62mm wide, 7mm apart
+         \tikzset{NatArr}\MonoidPanel{R}{CatD}{ArrG}{monoid among functors}{\(T \circ T\)}{\(T\)}{\(\symit{Id}\)}{\T{join}}{\T{pure}}
+      \end{scope}
+   \end{scope}
+\end{tikzpicture}\end{fullwidth}
+\vspace{4mm}
+\begin{itemize}
+   \item<3-> Same shape, same laws: only \(\times\) became \(\circ\)
+   \item<3-> \(\mu\) combines, \(\eta\) is the unit
+\end{itemize}
+\NoteRef{monoid-and-monad-side-by-side}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Monoidal Categories}
+\ShowPerson{benabou}
+\begin{itemize}
+   \item<1-> A way to put objects together: \(A \otimes B\), with a unit \(I\)
+   \item<2-> A \ct{monoid in} it: \(\mu\colon M \otimes M \to M\), \(\eta\colon I \to M\)\supercite{rivas2017monoids}
+\end{itemize}
+\vspace{3mm}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46mm]
+   \foreach \x/\o/\h/\c/\p/\u in {0/3/Monoid/{among\\types}/{\T{(a, b)}}/{\T{()}},
+         1/4/Applicative/{among\\functors, side by side}/{Day convolution}/{\T{Identity}},
+         2/5/Monad/{among\\functors, composed}/{\T{f (g a)}}/{\T{Identity}}}
+      \node[Card=43mm,minimum height=25mm,visible on=<\o->] at (\x,0) {\textbf{\small\T{\h}\strut}\\[1.5mm]a monoid \c\\[1.5mm]\(\otimes\): \p\\\(I\): \u};
+\end{tikzpicture}\end{fullwidth}
+\NoteRef{monoidal-categories}
+\end{frame}
+
+% \ThreeCard{title}{what it combines}{its categorical name}{mu}{eta}: one card of the takeaway below
+\newcommand\ThreeCard[5]{\textbf{\small\T{#1}}\\[.8mm]#2\\[.4mm]{\color{Mid}\scriptsize #3}\\[1.2mm]\(\mu\): #4\quad \(\eta\): #5}
+\Takeaway[takeaway-boxes]{Values, Contexts, Nested Contexts}{%
+   \begin{tikzpicture}[C3/.style={Card=41mm,minimum height=22mm,dash pattern=on 3pt off 2pt,font=\footnotesize},node distance=3mm]
+      \node[C3] (mo) {\ThreeCard{Monoid}{combines two values}{a monoid in types}{\T{(<>)}}{\T{mempty}}};
+      \node[C3,right=of mo] (ap) {\ThreeCard{Applicative}{combines two contexts without looking inside}{a lax monoidal functor}{\T{liftA2 (,)}}{\T{pure ()}}};
+      \node[C3,right=of ap] (mn) {\ThreeCard{Monad}{combines nested contexts: the value inside may shape the next context}{a monoid in endofunctors}{\T{join}}{\T{pure}}};
+      % the boxes are functors: Applicative and Monad stand on fmap
+      \path let \p1=(ap.west), \p2=(mn.east) in node[Card=\x2-\x1,minimum height=11mm,draw=ArrG,fill=ArrG!6,font=\footnotesize,anchor=north west]
+         (fu) at ([yshift=-3mm]ap.south west) {\textbf{\small\T{Functor}}\enspace changes the values in one context: \T{fmap}\\[.4mm]{\color{Mid}\scriptsize every Applicative and every Monad is one}};
+   \end{tikzpicture}}{}
+
+
+\section{Summary}
+\SectionPage[crown,left wing wave]{5}{Big Picture}{one idea, three times}
+
+\begin{frame}{Big Picture}
+\vspace*{-6mm}
+\begin{fullwidth}
+\centering
+% one row per class: the class in its Haskell column (types left, type constructors right, Foldable and
+% Traversable included), its notion (blue on
+% types, orange on functors) and its law; a band and a thin link join each row, arrows bridge over the links
+\begin{tikzpicture}[
+      Same/.style={Cls,font=\footnotesize\ttfamily,text width=20mm,align=center,MonoSpaces,text height=2.35mm,text depth=.45mm,inner ysep=1.1pt},
+      Cell/.style={Notion,text=black,font=\footnotesize,text width=35mm,text height=2.35mm,text depth=.45mm,inner ysep=1.1pt,visible on=<2->},
+      NF/.style={Cell,draw=ArrF,fill=ArrF!12}, NG/.style={Cell,draw=ArrG,fill=ArrG!12},
+      Law/.style={font=\scriptsize,anchor=west,visible on=<2->},
+      Bridge/.style={preaction={draw=white,line width=3.2pt,arrows=-,shorten >=3pt}},
+      Sup/.append style={shorten >=.6pt,shorten <=.6pt},
+      Example/.style={rounded corners=3pt,fill=white,draw=Mid!60,dashed,font=\scriptsize,align=center,inner xsep=6pt,inner ysep=3pt}]
+   \matrix[ampersand replacement=\&,row sep=2mm,column sep=6mm] {
+      \node[Same] (sg) {Semigroup};   \&                                  \& \node[NF] (csg) {semigroup};               \& \node[Law] (lsg) {\((x \cdot y) \cdot z = x \cdot (y \cdot z)\)}; \\
+                                      \& \node[Same] (fu) {Functor};     \& \node[NG] (cfu) {endofunctor};             \& \node[Law] {\(F(g \circ f) = F g \circ F f\)}; \\
+      \node[Same] (mo) {Monoid};      \&                                  \& \node[NF] (cmo) {monoid};                  \& \node[Law] {\(e \cdot x = x = x \cdot e\)}; \\
+                                      \& \node[Same] (ap) {Applicative}; \& \node[NG] (cap) {lax monoidal functor};    \& \node[Law] {\(F a \times F b \to F (a \times b)\)}; \\
+                                      \& \node[Same] (mn) {Monad};       \& \node[NG] (cmn) {monoid in endofunctors};  \& \node[Law] {\(\mu\colon T \circ T \Rightarrow T\)}; \\
+                                      \& \node[Same] (fo) {Foldable};    \& \node[NF] (cfo) {fold of the free monoid}; \& \node[Law] {\(T a \to [a] \to m\)}; \\
+                                      \& \node[Same] (tr) {Traversable}; \& \node[NG] (ctr) {distributive law};        \& \node[Law] {\(T (F a) \to F (T a)\)}; \\
+      \node[Same,dashed] (gr) {Group};  \&                                  \& \node[NF] (cgr) {monoid with undo: \textbf{Grp}}; \& \node[Law] {\(x \cdot x^{-1} = e = x^{-1} \cdot x\)}; \\
+   };
+   % the lane between the two class columns carries the long Functor -> Traversable arrow
+   \coordinate (lane) at ($(sg.east)!.5!(sg.east -| fu.west)$);
+   \begin{pgfonlayer}{background}% declared by tikzpingus
+      \foreach \h/\c in {sg/csg,fu/cfu,mo/cmo,gr/cgr,ap/cap,mn/cmn,fo/cfo,tr/ctr}{
+         \fill[Wash,rounded corners=3pt] ([xshift=-1.5mm,yshift=.7mm]sg.west |- \c.north) rectangle ([xshift=1.5mm,yshift=-.7mm]\c.south east);
+         \draw[Link,visible on=<2->] (\h.east) -- (\c.west);}
+   \end{pgfonlayer}
+   % Writer: a monad that uses a monoid for its log
+   \node[Example,anchor=east] (wr) at (mo.east |- mn) {\T{Writer w}\\[-.2ex]{\scriptsize needs \T{Monoid w}}};
+   \draw[Uses,Bridge] ([xshift=-3.5mm]mo.south east) -- ([xshift=-3.5mm]mo.south east |- wr.north);
+   \draw[Uses,Bridge] (wr.east) -- (mn.west);
+   % a group (no class in base, so dashed): a monoid whose every element can be undone, an object of Grp
+   \draw[Sup] (sg) -- node[right,EdgeNote,align=left] {more\\[-.3ex]structure} (mo);
+   \draw[Uses,rounded corners=4pt] (mo.west) -- ++(-2.5mm,0) |- node[pos=.25,left,EdgeNote] {uses} (fo.west);
+   \draw[Sup,Bridge] (fu) -- (ap);
+   \draw[Sup] (ap) -- (mn);
+   \draw[Sup] (fo) -- (tr);
+   \draw[Sup,Bridge,rounded corners=4pt] (fu.west) -- (lane |- fu) |- (tr.west);
+   \node[HGroup,fit=(cmo)(cap)(cmn),inner sep=2.5pt,line width=.8pt,visible on=<3->] (mg) {};
+   \node[anchor=south,font=\footnotesize,text=Mid] at ([yshift=2mm]$(sg.north)!.5!(sg.north -| fu)$) {Haskell};
+   \node[anchor=south,font=\footnotesize,visible on=<2->] (legend) at ([yshift=2mm]csg.north) {\textcolor{ArrF}{on types}\quad\textcolor{ArrG}{on functors}};
+   % the legend of the dashed box sits in the header, above the laws, so that the footer stays free
+   \node[EdgeNote,anchor=base west,inner sep=0pt,visible on=<3->,text=Ink] at (lsg.west |- legend.base) {\tikz[baseline=-.6mm]\draw[Mid,dash pattern=on 1.5pt off 1pt,line width=.7pt,rounded corners=1.5pt] (0,-1.4mm) rectangle (5mm,1.4mm);\ \parbox[b]{30mm}{three monoids,\\same laws\supercite{rivas2017monoids}}};
+\end{tikzpicture}
+\end{fullwidth}
+\NoteRef{big-picture}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Free Constructions}
+\centering
+\begin{tikzpicture}[y=8mm,C/.style={Cls,font=\footnotesize\ttfamily,text width=23mm,align=center,MonoSpaces,text height=2mm,text depth=.6mm}]
+   \foreach \y/\o/\c/\f/\k in {0/1/Semigroup/NonEmpty a/{},-1/1/Monoid/{[a]}/{\supercite[ch.~13]{milewski2019}},-2/2/Functor/Coyoneda f/{\supercite{kiselyov2015freer}},-3/3/Applicative/Ap f/{\supercite{capriotti2014free}},-4/4/Monad/Free f/{\supercite{swierstra2008}}}{
+      \node[C,visible on=<\o->] (c\y) at (0,\y) {\c};
+      \node[C,draw=CT,text=CT,visible on=<\o->] (f\y) at (5.4,\y) {\f};
+      \draw[Arr,CT,visible on=<\o->] (c\y) -- node[above,font=\footnotesize] {free} (f\y);
+      \node[anchor=west,visible on=<\o->] at (f\y.east) {\k};}
+\end{tikzpicture}
+\raggedright
+\vspace{3mm}
+\begin{itemize}
+   \item<5-> Free: just the operations, no equations beyond the laws
+   \item<5-> A program as data, interpreted later
+\end{itemize}
+\NoteRef{free-constructions}
+\NoteRef{free-constructions-2}
+\end{frame}
+
+\begin{frame}[t]{Beyond the Basics}
+\ShowPerson{lambek}
+\def\TileWidth{42mm}
+\vspace*{3mm}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=45mm,y=25.5mm]
+   \Tile{(0,0)}{\node[PDot=CT] (r) at (9,8) {}; \foreach \x in {3,9,15}{\node[PDot=ArrF] (l) at (\x,1) {}; \draw[PLine] (r) -- (l);}}{Folds as Algebras}{\T{foldr} for every type\supercite[ch.~24]{milewski2019}}
+   \Tile{(1,0)}{\node[PDot=CT] (c) at (9,4.5) {}; \foreach \a in {0,60,...,300}{\draw[PArr] ([shift={(\a:4.4mm)}]c.center) -- (c);}}{Yoneda Lemma}{an object is its arrows\supercite[ch.~15]{milewski2019}}
+   \Tile{(2,0)}{\node[circle,draw=ArrF,minimum size=4.4mm] (l) at (3.5,4.5) {}; \node[circle,draw=ArrG,minimum size=4.4mm] (r) at (14.5,4.5) {};
+      \draw[PArr,CT] (l.30) -- (r.150); \draw[PArr] (r.-150) -- (l.-30);}{Adjunctions}{free and forgetful\supercite{maclane1998cwm}}
+   \Tile{(0,-1)}{\node[PBox,minimum width=9mm,minimum height=8mm] (o) at (6,4.5) {}; \node[PBox=ArrG,fill=ArrG,minimum width=2.6mm,minimum height=3.6mm] at (o.center) {};
+      \node[PBox=ArrG,fill=ArrG,minimum width=2.6mm,minimum height=3.6mm] (f) at (15.5,4.5) {}; \draw[PArr] (o) -- (f);}{Optics}{focus on a part\supercite{pickering2017}}
+   \Tile{(1,-1)}{\node[PBox] (p1) at (3,4.5) {}; \node[PBox] (p2) at (9,4.5) {}; \node[PBox] (p3) at (15,4.5) {};
+      \draw[PArr] (p1) -- (p2); \draw[PArr] (p2) -- (p3);}{Free Monads}{a program as data\supercite{swierstra2008}}
+   \Tile{(2,-1)}{\node[PDot=ArrF] (t) at (9,8) {}; \node[PDot=ArrG] (l) at (3,1) {}; \node[PDot=CT] (r) at (15,1) {};
+      \draw[PLine] (t) -- (l) -- (r) -- (t);}{Curry--Howard--Lambek}{types, logic, categories\supercite{wadler2015}}
+\end{tikzpicture}\end{fullwidth}
+\Java[-4mm,12mm]{https://en.wikipedia.org/wiki/Visitor_pattern}{the visitor pattern is a fold over a data type}
+\NoteRef{beyond-the-basics}
+\end{frame}
+
+\endgroup
+
+% \Book{x}{overlay}{cover}{bib key}{title}{author, year}{what it is good for}: one book of the resources below
+\newcommand\Book[7]{%
+   \begin{scope}[visible on=<#2->]
+      % the cover with slightly rounded corners and a soft shadow
+      \node[inner sep=0pt,anchor=south] (bk) at (#1,0) {\phantom{\includegraphics[height=23mm,width=17mm,keepaspectratio]{books/#3}}};
+      \fill[black,opacity=.13,rounded corners=1.5pt] ([shift={(.45mm,-.45mm)}]bk.south west) rectangle ([shift={(.45mm,-.45mm)}]bk.north east);
+      \begin{scope}\clip[rounded corners=1.5pt] (bk.south west) rectangle (bk.north east);
+         \node[inner sep=0pt,anchor=south] at (#1,0) {\includegraphics[height=23mm,width=17mm,keepaspectratio]{books/#3}};\end{scope}
+      \draw[black!18,line width=.3pt,rounded corners=1.5pt] (bk.south west) rectangle (bk.north east);
+      \node[anchor=north,inner sep=0pt,text width=41mm,minimum height=7.5mm,align=center,font=\footnotesize\bfseries,NoHyphens] (bt) at ([yshift=-2mm]#1,0) {#5};
+      \node[anchor=north,inner sep=0pt,text width=41mm,align=center,font=\scriptsize,text=Mid,NoHyphens] (ba) at ([yshift=-1mm]bt.south) {#6\supercite{#4}};
+      \node[anchor=north,inner sep=0pt,text width=41mm,align=center,font=\scriptsize,NoHyphens] at ([yshift=-1.5mm]ba.south) {#7};
+   \end{scope}}
+
+\newcommand\CoverCredit{\begin{tikzpicture}[overlay,remember picture]\node[font=\tiny,text=Mid,anchor=north east,align=right] at ([shift={(-4mm,-3mm)}]current page.north east)
+   {Covers \textcopyright\ their publishers and authors};\end{tikzpicture}}
+
+\begin{frame}{Recommended Resources: First Steps}
+\vspace*{2mm}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46mm]
+   \Book{0}{1}{milewski}{milewski2019}{Category Theory for Programmers}{Bartosz Milewski, 2019}{for programmers, in Haskell and C++; free online}
+   \Book{1}{2}{lawvere}{lawvere2009}{Conceptual Mathematics}{Lawvere and Schanuel, 2009}{a gentle start: school mathematics is enough}
+   \Book{2}{3}{fongspivak}{fongspivak2019}{Seven Sketches in Compositionality}{Fong and Spivak, 2019}{beyond code: databases and circuits, free on arXiv}
+\end{tikzpicture}\end{fullwidth}\CoverCredit
+\NoteRef{recommended-resources-first-steps}
+\end{frame}
+
+\begin{frame}{Recommended Resources: Going Deeper}
+\vspace*{2mm}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46mm]
+   \Book{0}{1}{pierce}{pierce1991}{Basic Category Theory for Computer Scientists}{Benjamin C.\ Pierce, 1991}{a hundred dense pages, up to adjunctions}
+   \Book{1}{2}{awodey}{awodey2010}{Category Theory}{Steve Awodey, 2010}{the standard textbook, close to logic}
+   \Book{2}{3}{birdmoor}{birdmoor1997}{Algebra of Programming}{Bird and de Moor, 1997}{programs calculated from specifications}
+\end{tikzpicture}\end{fullwidth}\CoverCredit
+\NoteRef{recommended-resources-going-deeper}
+\end{frame}
+
+\section{Backup}
+\SectionPage[monocle right]{6}{Backup}{more depth, for the curious}
+
+\begin{frame}{Two Views of a Group}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=1cm,y=1cm,L/.style={font=\scriptsize,inner sep=1.5pt},
+      P/.style={rounded corners=6pt,fill=Wash!70,minimum width=58mm,minimum height=33mm},
+      V/.style={font=\tiny\bfseries,text=Ink!80,inner sep=1pt},
+      C/.style={draw=Ink!50,fill=white,minimum size=4.2mm,inner sep=0pt,font=\scriptsize\ttfamily}]
+   % left: the moves of a triangle
+   \node[P] (pl) at (-3.5,0) {};
+   \node[font=\small\bfseries,anchor=north] at ([yshift=-1.5mm]pl.north) {\(D_3\): moves of a triangle};
+   \coordinate (t) at (-3.5,-.05);
+   \draw[Ink!70,line join=round,fill=CT!12] ([shift={(90:7mm)}]t) coordinate (t1) -- ([shift={(210:7mm)}]t) coordinate (t2) -- ([shift={(330:7mm)}]t) coordinate (t3) -- cycle;
+   \node[V,above left=0pt and 1pt of t1] {1}; \node[V,below left=0pt of t2] {2}; \node[V,below right=0pt of t3] {3};
+   \draw[Mid,dashed] ([yshift=1.5mm]t1) -- ([yshift=-2mm]t |- t2) node[below,L,text=ArrG] {\(f\): flip};
+   \draw[Arr,Af] ([shift={(40:10mm)}]t) arc[start angle=40,end angle=-40,radius=10mm] node[right,L,pos=.5] {\(r\): 120\textdegree};
+   % right: the moves of a list
+   \node[P] (pr) at (3.5,0) {};
+   \node[font=\small\bfseries,anchor=north] at ([yshift=-1.5mm]pr.north) {\(S_3\): moves of a list};
+   \foreach \x/\v in {0/1,1/2,2/3} \node[C] at (3.07+\x*.43,.4) {\v};
+   \node[L,anchor=west] at (2.1,-.25) {\(r\):\ \T{[1,2,3]} \(\mapsto\) \T{[2,3,1]}};
+   \node[L,anchor=west] at (2.1,-.7) {\(f\):\ \T{[1,2,3]} \(\mapsto\) \T{[1,3,2]}};
+   \node[L,text=Mid,anchor=south] at ([yshift=1.5mm]pl.south) {elements are the moves, not the triangle};
+   \node[L,text=Mid,anchor=south] at ([yshift=1.5mm]pr.south) {rotate or swap the positions};
+   % the homomorphism between them
+   \begin{scope}[visible on=<2->]
+      \draw[Arr,CT,thick] ([yshift=2mm]pl.east) -- node[above,L,text=CT] {\(\varphi\)} ([yshift=2mm]pr.west);
+      \node[L,text=CT,align=center,font=\tiny] at (0,-.45) {\(r \mapsto r\)\\\(f \mapsto f\)};
+   \end{scope}
+   % zoom out: in Grp only the dots and the arrow remain
+   \begin{scope}[visible on=<3->,yshift=-22.5mm]
+      \node[font=\small\bfseries,anchor=east] at (-3.2,0) {in \textbf{Grp}:};
+      \node[Obj,minimum size=7mm,font=\scriptsize] (d) at (-2.2,0) {\(D_3\)};
+      \node[Obj,minimum size=7mm,font=\scriptsize] (s) at (0,0) {\(S_3\)};
+      \draw[Arr,CT] (d) -- node[above,L,text=CT] {\(\varphi\)} (s);
+      \node[Obj,minimum size=7mm,font=\scriptsize,draw=Mid!60,text=Mid] (z) at (2.2,0) {\(\mathbb{Z}\)};
+      \node[Obj,minimum size=7mm,font=\scriptsize,draw=Mid!60,text=Mid] (z2) at (4.4,0) {\(\mathbb{Z}_2\)};
+      \draw[Arr,Mid!70] (z) -- node[above,L,text=Mid] {even/odd} (z2);
+   \end{scope}
+\end{tikzpicture}\end{fullwidth}
+\vspace{-1mm}
+\begin{itemize}
+   \item<2-> A \ct{homomorphism} translates moves: \(\varphi(a \cdot b) = \varphi(a) \cdot \varphi(b)\)
+   \item<4-> In \textbf{Grp}, the inside is gone: only the arrows remain
+\end{itemize}
+\NoteRef{two-views-of-a-group}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Language Semantics}
+\ShowPerson{lawvere}<2->
+\begin{fullwidth}\centering
+\begin{tikzpicture}
+   \node[BlobC,minimum width=44mm,minimum height=26mm] (C) at (0,0) {};
+   \node[Lbl,anchor=south,text=ArrF] at (C.north) {syntax};
+   \node[Obj,InC] (a) at ([xshift=-9mm]C.center) {\(\tau\)}; \node[Obj,InC] (b) at ([xshift=9mm]C.center) {\(\sigma\)};
+   \draw[Arr,Af] (a) -- node[above,font=\small] {\(t\)} (b);
+   \node[BlobD,minimum width=44mm,minimum height=26mm,right=26mm of C,visible on=<2->] (D) {};
+   \node[Lbl,anchor=south,text=ArrG,visible on=<2->] at (D.north) {meaning, e.g.\ \textbf{Set}};
+   \node[Obj,InD,visible on=<2->] (fa) at ([xshift=-9.5mm]D.center) {\(\sem{\tau}\)}; \node[Obj,InD,visible on=<2->] (fb) at ([xshift=9.5mm]D.center) {\(\sem{\sigma}\)};
+   \draw[Arr,Ag,visible on=<2->] (fa) -- node[above,font=\small] {\(\sem{t}\)} (fb);
+   % solid like every functor, dashed arrows are reserved for arrows that exist uniquely
+   \draw[Arr,CT,visible on=<2->] (C.east) -- node[above,font=\small] {\(\sem{\cdot}\)} (D.west);
+\end{tikzpicture}\end{fullwidth}
+\vspace{3mm}
+\begin{itemize}
+   \item<2-> Semantics: a \ct{functor} from syntax to meaning\supercite{lawvere1963}
+   \item<3-> Functor law: \ct{compositionality}, \(\sem{t \circ s} = \sem{t} \circ \sem{s}\)
+\end{itemize}
+\vspace{1mm}
+\begin{uncoverenv}<3->
+\begin{minted}{mhs}
+eval :: Program -> (State -> State)
+eval (Seq p q) = eval q . eval p
+\end{minted}
+\end{uncoverenv}
+\NoteRef{language-semantics}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Monoid and Semigroup}
+\HierMap{2}
+\vspace*{-7mm}
+\begin{itemize}
+   \item<1-> Neutral element: the result for no values
+   \item<2-> Without it, empty input has no answer\supercite{yorgey2012monoids}
+\end{itemize}
+\vspace{2mm}
+\begin{ghcisession}[start=3]
+getSum (foldMap Sum [])
+getMax (mempty :: Max Int)
+\end{ghcisession}
+\Java[-45mm,7mm]{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/Stream.html\#reduce(java.util.function.BinaryOperator)}{\T{reduce} without a start value returns an \T{Optional}}
+\NoteRef{monoid-and-semigroup}
+\end{frame}
+
+\begin{frame}[fragile]{Foldable and Traversable}
+\begin{fullwidth}
+\begin{columns}[T,onlytextwidth]
+\column{0.465\linewidth}\lstfs[1]{8}%
+{\centering\textbf{\T{Foldable}}: boil it down\par\vspace{1mm}
+\tikz{\Container{x}{(0,0)}{1,2,3}{3}\node[Val] (s) at (5.6,0) {6};\draw[Arr] (x) -- node[above,font=\scriptsize] {\T{foldMap Sum}} (s);}\par\vspace{1mm}}
+Like \T{reduce}: combine all with a monoid\supercite{yorgey2009typeclassopedia}\\[1mm]
+\begin{minted}{mhs}
+foldMap :: Monoid m
+        => (a -> m) -> t a -> m
+\end{minted}
+\column{0.465\linewidth}\lstfs[1]{8}%
+\begin{uncoverenv}<2->
+{\centering\textbf{\T{Traversable}}: visit with an effect\par\vspace{1mm}
+\tikz{\Container{x}{(0,0)}{"1","2"}{2}\Container{y}{(3.9,0)}{1,2}{2}\node[Box,draw=Ink,fit=(y),inner sep=3pt] (z) {};\node[Lbl,below=0pt of z] {\T{Just}};\draw[Arr] (x) -- node[above,font=\scriptsize] {\T{traverse}} (z);}\par\vspace{1mm}}
+Keep the shape, collect the effects: one failure fails all\supercite{gibbons2009iterator}\\[1mm]
+\begin{minted}{mhs}
+traverse :: Applicative f
+  => (a -> f b) -> t a -> f (t b)
+\end{minted}
+\end{uncoverenv}
+\end{columns}
+\vspace{-2mm}
+\begin{ghcisession}[start=3]
+traverse readMaybe ["1", "x"] :: Maybe [Int]
+\end{ghcisession}
+\end{fullwidth}
+\NoteRef{foldable-and-traversable}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Foldable and Functor}
+\begin{itemize}
+   \item<1-> \ihs{Functor} keeps the container, \ihs{Foldable} drops it
+   \item<2-> Functions: functors, not foldable
+   \item<2-> \T{Data.Set}: foldable, no functor
+\end{itemize}
+\vspace{2mm}
+\begin{ghcisession}[start=3]
+length (Just 'x')
+elem 2 (Right 2 :: Either String Int)
+toList (Just 'x')
+\end{ghcisession}
+\NoteRef{foldable-and-functor}
+\end{frame}
+
+\begin{frame}[fragile]{From Functor to Monad}
+\HierMap{5}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=46mm]
+   \foreach \x/\o/\n/\d in {0/1/Functor/{one context,\\one function},1/2/Applicative/{several \emph{independent}\\contexts\supercite{mcbride2008applicative}},2/3/Monad/{a context that\\\emph{depends} on a result}}
+      \node[Card=43mm,minimum height=17mm,visible on=<\o->] at (\x,0) {\textbf{\small\T{\n}}\\[1mm]\d};
+\end{tikzpicture}\end{fullwidth}
+\vspace{1mm}
+\begin{uncoverenv}<4->
+\begin{minted}{mhs}
+pure id <*> v = v                  -- identity
+pure f <*> pure x = pure (f x)     -- homomorphism
+\end{minted}
+\end{uncoverenv}
+\begin{ghcisession}[start=5]
+(+) <$> readMaybe "1" <*> readMaybe "x"
+liftA2 (,) [1, 2] "ab"
+\end{ghcisession}
+\NoteRef{from-functor-to-monad}
+\end{frame}
+
+\begin{frame}[fragile]{fmap, foldMap, traverse}
+\lstfs[1]{8}%
+\begin{minted}{mhs}
+fmap     :: (a -> b)   -> t a -> t b      -- container stays
+foldMap  :: (a -> m)   -> t a -> m        -- container is gone
+traverse :: (a -> f b) -> t a -> f (t b)  -- stays, inside f
+\end{minted}
+\vspace{3mm}
+\begin{ghcisession}[start=2]
+traverse readMaybe ["1", "x"] :: Maybe [Int]
+sequenceA [[1, 2], [3, 4]]
+\end{ghcisession}
+\NoteRef{fmap-foldmap-traverse}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Embellished Functions}
+\HierMap{7}
+\lstfs[1]{8}%
+\begin{mhsfile}{Logged.hs}
+import Data.Char (toUpper)
+import Control.Monad ((>=>))
+upCase :: String -> (String, String)
+upCase s = ("upCase ", map toUpper s)
+toWords :: String -> (String, [String])
+toWords s = ("toWords ", words s)
+\end{mhsfile}
+\begin{ghcisession}[start=2]
+(upCase >=> toWords) "hello monads"
+\end{ghcisession}
+\begin{itemize}
+   \item<3-> A function with a log is a Kleisli arrow, \ihs{(>=>)} composes them
+   \item<4-> Because \ihs{String} is a \ct{monoid}, tuples \ihs{(String, b)} compose\supercite[ch.~4]{milewski2019}
+\end{itemize}
+\NoteRef{embellished-functions}
+\end{frame}
+\mhsGhcUnload
+
+\begin{frame}[optional]{Mathematics Around Hask}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[x=1cm,y=.8cm,C/.style={Card=27mm,minimum height=10mm,font=\scriptsize,inner sep=2pt},
+      Forget/.style={Arr,Mid},Free/.style={Arr,CT},Other/.style={Arr,Ag},L/.style={font=\scriptsize}]
+   \node[C] (grp) at (-5.4,1.5) {\textbf{\small Grp}\\groups};
+   \node[C] (mon) at (-1.6,1.5) {\textbf{\small Mon}\\monoids};
+   \node[C] (cat) at (5.2,1.5) {\textbf{\small Cat}\\categories};
+   \node[C] (top) at (-5.4,-.9) {\textbf{\small Top\(_*\)}\\pointed spaces};
+   \node[C] (set) at (.6,-.9) {\textbf{\small Set}\\sets};
+   \node[C] (hask) at (5.2,-.9) {\textbf{\small Hask}\\types};
+   \node[C] (vect) at (-1.6,-2.7) {\textbf{\small Vect}\\vector spaces};
+   \draw[Forget] (grp) -- node[above,L] {forget} (mon);
+   \draw[Forget] (mon.south east) to[bend left=12] node[right,L] {forget} (set.north);
+   \draw[Free] (set.north west) to[bend left=12] node[left,L] {free: \T{[a]}} (mon.south);
+   \draw[Forget] (top) -- node[above,L] {keep only the points} (set);
+   \draw[Other] (top) -- node[right,L] {\(\pi_1\)} (grp);
+   \draw[Forget] (vect.north east) to[bend left=12] node[below right=-1pt,L] {forget} (set.south);
+   \draw[Free] (set.south west) to[bend right=12] node[above left=-1pt,L] {free} (vect.north);
+   \draw[Arr,dotted,Mid] (hask) -- node[above,L] {idealized} (set);% dotted: dashed arrows exist uniquely
+   \draw[Arr,dotted,Mid] (hask) -- node[left,L] {is an object of} (cat);
+\end{tikzpicture}\end{fullwidth}
+\vspace{3mm}
+\begin{itemize}
+   \item \textcolor{Mid}{Forgetful}: drop structure.\enspace\ct{Free}: add it as cheaply as possible
+\end{itemize}
+\NoteRef{mathematics-around-hask}
+\end{frame}
+
+\begin{frame}[optional]{What Free Means}
+\ShowPerson{kan}
+\begin{fullwidth}\centering
+\begin{tikzpicture}[V/.style={font=\footnotesize\ttfamily}]
+   \node[BlobC,minimum width=18mm,minimum height=26mm] (g) {};
+   \node[Lbl,anchor=south,text=ArrF] at (g.north) {generators};
+   \node[V] (a) at ([yshift=4mm]g.center) {a}; \node[V] (b) at ([yshift=-4mm]g.center) {b};
+   \node[BlobD,minimum width=35mm,minimum height=26mm,right=15mm of g,visible on=<2->] (w) {};
+   \node[Lbl,anchor=south,text=ArrG,visible on=<2->] at (w.north) {free monoid: all words};
+   \node[V,visible on=<2->,align=center] at (w.center) {[]\quad [a]\quad [b]\\[1mm]\text{[a,b]}\quad \text{[b,a]}\\[1mm]\text{[a,a,b]}\quad \dots};
+   \node[Blob,minimum width=22mm,minimum height=26mm,right=18mm of w,visible on=<3->] (m) {};
+   \node[Lbl,anchor=south,visible on=<3->] at (m.north) {any monoid};
+   \node[V,visible on=<3->,align=center] at (m.center) {Sum 1\\[1mm]Sum 2\\[1mm]Sum 3};
+   \draw[Arr,visible on=<2->] (g) -- node[above,font=\footnotesize\ttfamily] {(:[])} (w);
+   \draw[Arr,CT,dashed,visible on=<3->] (w) -- node[above,font=\footnotesize\ttfamily] {foldMap f} (m);
+   \draw[Arr,Af,visible on=<3->] (g.south) to[bend right=14] node[below,font=\footnotesize\ttfamily] {f} (m.south);
+\end{tikzpicture}\end{fullwidth}
+\vspace{2mm}
+\begin{itemize}
+   \item<2-> Free: words over generators, and no further equations
+   \item<3-> To leave it: only say what each generator means
+\end{itemize}
+\NoteRef{what-free-means}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Free Functor: A Delayed fmap}
+\begin{minted}{mhs}
+data Coyoneda f a = forall x. Coyoneda (x -> a) (f x)
+
+instance Functor (Coyoneda f) where
+  fmap g (Coyoneda h fx) = Coyoneda (g . h) fx
+\end{minted}
+\vspace{3mm}
+\begin{itemize}
+   \item Works for any \ihs{f}, even without a \ihs{Functor} instance
+   \item \ihs{fmap} only collects functions, by composition
+   \item One real pass at the end: \ct{fusion} for free
+\end{itemize}
+\Java{https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/stream/package-summary.html\#StreamOps}{a \T{Stream} delays its \T{map} calls in the same way}
+\NoteRef{free-functor-a-delayed-fmap}
+\end{frame}
+
+\begin{frame}[fragile,optional]{Free Monad: A Program as Data}
+\begin{fullwidth}
+\begin{columns}[c,onlytextwidth]
+\column{0.588\linewidth}\lstfs[1]{7}%
+\begin{minted}{mhs}
+data Free f a = Pure a
+              | Free (f (Free f a))
+data Cmd k = Say String k deriving Functor
+
+run (Pure a)          = pure a
+run (Free (Say s k))  = putStrLn s >> run k
+test (Pure _)         = []
+test (Free (Say s k)) = s : test k
+\end{minted}
+\column{0.342\linewidth}
+\centering
+\begin{tikzpicture}[T/.style={Cls,font=\footnotesize\ttfamily,text width=17mm,align=center,MonoSpaces}]
+   \node[T] (a) at (0,0) {Say "a"}; \node[T] (b) at (0,-1.1) {Say "b"}; \node[T,draw=CT,text=CT] (c) at (0,-2.2) {Pure ()};
+   \draw[Arr] (a) -- (b); \draw[Arr] (b) -- (c);
+\end{tikzpicture}
+\end{columns}
+\vspace{3mm}
+\begin{itemize}
+   \item One program, two interpreters: \ihs{run} and \ihs{test}\supercite{swierstra2008}
+\end{itemize}
+\Java{https://docs.oracle.com/en/java/javase/21/language/sealed-classes-and-interfaces.html}{a \T{sealed interface} of commands, and a \T{switch} as interpreter}
+\end{fullwidth}
+\NoteRef{free-monad-a-program-as-data}
+\end{frame}
+
+% the history in two parts: the theory, then the languages that took it up
+\tikzset{history/.style={
+   history-line/.style={line width=1.85mm,Wash,line cap=round},
+   history-event/.style={line width=.8mm,Mid,{Circle[length=1.85mm]}-,shorten <=-.925mm,line cap=round},
+   history-box/.style={font=\scriptsize,text=black,inner sep=1.6pt,rounded corners=4pt,fill=white},
+   history-name/.style={font=\footnotesize\bfseries,Ink}}}
+
+\begin{frame}[optional]{A Short History: Theory}
+\ShowPerson*{moggi}<2->
+\ShowPerson*{kleisli}[34mm]
+\vspace*{-1mm}
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}[history]
+   \begin{scope}[visible on=<1->]
+      \HistoryLane{1.25}{Mathematics}
+      \HistoryStop{1.25}{1}{4}{1}{1945}{categories}{Eilenberg, Mac Lane\supercite{eilenberg1945natural}}
+      \HistoryStop{1.25}{2}{4}{-1}{1958}{adjoint functors}{Kan\supercite{kan1958adjoint}}
+      \HistoryStop{1.25}{3}{4}{1}{1965}{every monad from\\an adjunction}{Kleisli, Eilenberg, Moore\supercite{kleisli1965,eilenberg1965adjoint}}
+      \HistoryStop{1.25}{4}{4}{-1}{1971}{textbook}{Mac Lane\supercite{maclane1998cwm}}
+   \end{scope}
+   \begin{scope}[visible on=<2->]
+      \HistoryLane{-1.25}{Semantics}
+      \HistoryStop{-1.25}{1}{4}{1}{1963}{functorial semantics}{Lawvere\supercite{lawvere1963}}
+      \HistoryStop{-1.25}{2}{4}{-1}{1989}{theorems for free}{Wadler\supercite{wadler1989theorems}}
+      \HistoryStop{-1.25}{3}{4}{1}{1989}{monads for effects}{Moggi\supercite{moggi1989lambda,moggi1991notions}}
+      \HistoryStop{-1.25}{4}{4}{-1}{1990}{monads in programs}{Wadler\supercite{wadler1990comprehending,wadler1992essence}}
+   \end{scope}
+\end{tikzpicture}
+\end{fullwidth}
+\NoteRef{a-short-history-theory}
+\end{frame}
+
+\begin{frame}[optional]{A Short History: Languages}
+\ShowPerson*{peytonjones}
+\ShowPerson*{hudak}[34mm]
+\vspace*{-1mm}
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}[history]
+   \begin{scope}[visible on=<1->]
+      \HistoryLane{1.4}{Haskell}
+      \HistoryStop{1.4}{1}{7}{1}{1987}{a committee forms}{Hudak, Peyton Jones, Wadler, \dots\supercite{hudak2007history}}
+      \HistoryStop{1.4}{2}{7}{-1}{1989}{type classes}{Wadler, Blott\supercite{wadler1989adhoc}}
+      \HistoryStop{1.4}{3}{7}{1}{1990}{Haskell 1.0}{Hudak, Wadler (editors)}
+      \HistoryStop{1.4}{4}{7}{-1}{1996}{Haskell 1.3:\\monadic I/O}{after Peyton Jones, Wadler\supercite{peytonjones1993imperative}}
+      \HistoryStop{1.4}{5}{7}{1}{2008}{Applicative}{McBride, Paterson\supercite{mcbride2008applicative}}
+      \HistoryStop{1.4}{6}{7}{-1}{2015}{GHC 7.10:\\Applicative \(\Rightarrow\) Monad}{AMP proposal}
+      \HistoryStop{1.4}{7}{7}{1}{2018}{GHC 8.4:\\Semigroup \(\Rightarrow\) Monoid}{core libraries\supercite{base-changelog}}
+   \end{scope}
+   \begin{scope}[visible on=<2->]
+      \HistoryLane{-1.35}{Java}
+      \HistoryStop{-1.35}{1}{5}{-1}{1996}{Java 1.0}{Gosling}
+      \HistoryStop{-1.35}{2}{5}{1}{1997}{Pizza: generics,\\lambdas, ADTs}{Odersky, Wadler\supercite{odersky1997pizza}}
+      \HistoryStop{-1.35}{3}{5}{-1}{1998}{GJ}{Bracha, Odersky, Stoutamire, Wadler\supercite{bracha1998gj}}
+      \HistoryStop{-1.35}{4}{5}{1}{2004}{Java 5: generics}{JSR 14, from GJ}
+      \HistoryStop{-1.35}{5}{5}{-1}{2014}{Java 8: lambdas,\\Optional, Stream}{JSR 335, Goetz\supercite{jsr335}}
+   \end{scope}
+\end{tikzpicture}
+\end{fullwidth}
+\NoteRef{a-short-history-languages}
+\end{frame}
+
+% the feedback slide is private: the public copy leaves out feedback.tex
+\InputIfFileExists{feedback.tex}{}{}
+
+\References
+
+\end{document}

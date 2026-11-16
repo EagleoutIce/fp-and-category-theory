@@ -1,0 +1,126 @@
+\errorcontextlines9999
+\documentclass[aspectratio=169,professionalfonts,fleqn]{beamer}
+
+\input{shared.tex}
+\AtEndPreamble{\colorlet{tcbcolback}{btdl@color@background}}
+\let\hl\relax
+
+% manually load everything but sfmath
+\usepackage{tikz,fontawesome,multicol,etoolbox,xstring,pbox}
+\usetikzlibrary{calc,decorations.text,decorations.pathreplacing}
+\usepackage[nolibs,nofonts,centerfoot]{lib/beamer-themes/dividing-lines/beamerthemedividing-lines}
+\setbeamerfont{frametitle}{size=\Large,series=\mdseries}
+
+\usepackage{lib/latex-lambda-calculus-visualizer/lc-visualizer}
+\makeatletter
+\tikzset{lc@abstraction@bracket/.append style={thin,opacity=.35},lc@node@replacement@collapsed/.append style={font=\ttfamily,execute at begin node={\vphantom{t}}},path image shift/.style={},
+path image/.style 2 args={path picture={\node at ([path image shift]path picture bounding box.center) {\includegraphics[width=#2]{#1}};}}}
+\let\fakemix\lc@colormix@doublevar
+
+\lcSetup{duplicate-mixin={#1!83!yellow!60!lightgray!65!black}}
+\newcommand*\reducearrow[3][]{\tikz[overlay,remember picture,uulmaccent!20!lightgray]{
+   \draw[line cap=round,opacity=.5,line width=1mm] ([yshift=-.5mm]#2.north) to[edge node={node (@1) {}}] ([yshift=-.5mm]#2@.north);
+   \path(#3.north) -- (#3@.north) coordinate[pos=.5] (@2);
+   \draw[-Kite,bend right=10,#1] (@1) to (@2);
+}}
+\colorlet{lc@bracketcolor}{black}
+
+
+\usepackage[super]{nth}
+
+% patch it to include the sheet
+\makeatletter
+\def\sheet#1{\def\@sheet{#1}}
+\let\@sheet\@empty% no \sheet: the title goes without a number
+\let\oldtitle\title
+\def\titlejoiner{.~}
+\def\title#1{\oldtitle{\ifx\@sheet\@empty\else\@sheet\titlejoiner\fi#1}}
+\colorlet{btdl@color@primary}{@main}%
+% \definecolor{btdl@color@secondary}{RGB}{#2}%
+% \definecolor{btdl@color@alerted}{RGB}{#3}%
+
+\newcounter{BLcounter}
+% \newcommand<>\BL[2]{\Snode{@bl@\theBLcounter}#2\Snode{@bl@\theBLcounter @}{\def\hlcolor{#1}\def\hlopa{.15}\only#3{\tikz[@O]{\hlbehindcode{@bl@\theBLcounter}{@>}}\stepcounter{BLcounter}}}}
+\newcommand<>\BL[2]{#2}%
+
+\usepackage{polyglossia}
+\setdefaultlanguage[variant=american]{english}
+
+\InstallShortcuts
+\def\optional{\textcolor{uulmaccent}{\textit{(optional)}}\xspace}
+
+% \titlehead{FP WT22/23}
+\subtitle{Functional Programming, Winter Term 2026/27}
+\institute{Software Engineering and Programming Languages}
+
+\author[\href{mailto:florian.sihler@uni-ulm.de}{Florian Sihler}]{\href{mailto:florian.sihler@uni-ulm.de}{Florian Sihler}}
+\outro{Ulm, \insertdate}
+\newenvironment{tasks}{\begingroup\setbeamertemplate{enumerate item}{\itshape\alph{enumi})}\settowidth\leftmargini{xx)}%
+\addtolength\leftmargini{\labelsep}\begin{enumerate}}{\end{enumerate}\endgroup}
+\DeclareSymbolFont{cmsymbols}{OMS}{cmsy}{m}{n}
+\SetSymbolFont{cmsymbols}{bold}{OMS}{cmsy}{b}{n}
+\DeclareSymbolFontAlphabet{\mathcal}{cmsymbols}
+\AtBeginDocument{\let\setminus\relax
+\DeclareMathOperator\setminus{\textbackslash\,}}
+
+\def\F{\ensuremath{\mathcal{F}}}
+\newsavebox\pinguexplainbox
+
+\input{magic-compat.tex}
+% \NoteRef{key}: speaker notes that live in notes/notes.tex (private), shown only by the note builds of the makefile
+\input{setup/noterefs}
+
+\newcommand<>\CodeFileMarkerAttach[2][]{\only#3{\CodeFileMarker{\attachfilesetup{color=@filemarker}\fancyulcolor{@filemarker}\textattachfile{\curpath #1#2}{\rawlink{#2}}}}}
+\newcommand<>\CodeFileMarkerAttachRaw[2][]{\only#3{\attachfilesetup{color=@filemarker}\StrSubstitute{#2}{_}{\_}[\name]\textattachfile{\curpath #1#2}{\name}}}
+\newcommand<>\CodeFileAttach[2][]{\only#3{\attachfilesetup{color=@filemarker}\StrSubstitute{#2}{_}{\_}[\name]\textattachfile{\curpath #1#2}{\expandafter\rawlink\expandafter{\name}}}}
+\newcommand<>\ShowInTheWeb[2][.25mm]{\ShowInTheWebWith#3[#1]{#2}{run in browser}}
+\newcommand<>\ShowInTheWebWith[3][.25mm]{\only#4{\smash{\raisebox{#1}{\color{lightgray}\sffamily\tiny\fancyulcolor{lightgray}\link{#2}{{\raisebox{1pt}{\tikz[scale=.5]{\draw[rounded corners=.33pt] (0,0) -- (0,.25) -- (.3,.125) -- cycle;}}} #3}}}}\vspace*{-#1}}
+
+\usepackage{attachfile2}
+\attachfilesetup{%
+    author={Florian Sihler},%
+    color=0.2 0.3647 0.4941, icon=Tag, mimetype=text/plain%
+}
+\colorlet{pingu-board-back}{gray!85!red!10!white}
+\newcommand\MakeThePinguExplainIt[3][]{%
+\setbox\pinguexplainbox=\hbox{\tikzpicture\pinguexplain{#1}{#2}{#3}\endtikzpicture}}
+\def\pinguexplain#1#2#3{
+  \pingu[body type=legacy,body=pingu@black!70!pingu@main,glasses,left wing wave,staff left,right wing grab,cup=pingu@green!80!pingu@black,left item angle=-10,left eye wink,staff left length=23mm,cap=pingu@bronze!50!pingu@black!70!pingu@main, cap extra height=1.125mm,name=pingu,#2]
+
+  \node[above right=-2.66mm,fill=pingu-board-back,draw=pingu@bronze!50!pingu@black!70!pingu@main!80!black,line width=.6mm,rounded corners=2pt,text width=5.25cm,minimum height=1.5cm,text=black,inner sep=8pt,align=justify,#1] at (pingu-staff-left-top) {\topsep=0pt\ignorespaces#3};}% TODO: LstBoardStyle
+
+\newsavebox\tempboxA
+\usepackage{forest}
+
+% maybe?
+% \appto\xlst@styles@lst@basic{\color{@main!15!black}}%
+\lstcolorlet{keywordA}{@main!70!green}
+\lstcolorlet{keywordB}{@main!40!green}
+\lstcolorlet{keywordC}{@main!85!green}
+\lstcolorlet{numbers}{purple!60!@main!90!red}
+% \def\xlst@styles@lst@keywordA{\@declaredcolor{xlst@colors@lst@keywordA}\sbfamily}
+
+
+\def\tokenchain#1#2#3{%
+  \foreach[count=\i, remember=\i as \li (initially 0)] \elem in {#3}{%
+    \ifnum\li>0
+      \node[inner xsep=0pt,right] (#1\i) at (#1\li.east) {\!\strut\expandafter\ihs\expandafter{\elem}\!};
+    \else
+      \node[inner xsep=0pt,right] (#1\i) at (#2) {\!\strut\expandafter\ihs\expandafter{\elem}\!};
+    \fi
+    \xdef\@lasti{\i}%
+  }%
+}
+
+% #1 name, #2 startpos, #3 chain, #4 type
+\def\tokenchaintype#1#2#3#4{%
+  \tokenchain{#1}{#2}{#3}%
+  \node[inner xsep=0pt,right] (#1type) at (#1\@lasti.east) {\strut\small\type{#4}};
+}
+\preto\input@path{{lib/code-animation}}
+\usepackage{lib/code-animation/code-animation}
+\def\ca@Strut{\vphantom{\xlst@font@fs@normal\xlst@styles@lst@basic\strut}}
+
+% no space here!
+\xspaceaddexceptions{\Gclose}%
+\def\lcnegskip{\vspace*{-.85\bigskipamount}}

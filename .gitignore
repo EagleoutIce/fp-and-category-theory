@@ -1,0 +1,13 @@
+build/
+anim-*.tex
+noanim-*.tex
+*.pdf
+*.aux
+*.log
+*-mhs-session*
+Logged.hs
+SafeDiv.hs
+Structures.hs
+build-main/
+mainchk*
+*.pdfpc

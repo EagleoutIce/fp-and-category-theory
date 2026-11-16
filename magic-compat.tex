@@ -1,0 +1,73 @@
+% shared by sheet-global and session-global.tex: magic-haskell, lc-visualizer and the old haskell-listings interface
+\chardef\magiccompatatcode=\catcode`\@
+\makeatletter
+\preto\input@path{{lib/magic-haskell/}{lib/magic-haskell/xlistings/}{lib/magic-haskell/xlistings/langs/}{lib/latex-lambda-calculus-visualizer/}}
+\RequirePackage[language=mhs]{magic-haskell}
+\@ifpackageloaded{lc-visualizer}{}{\RequirePackage{lc-visualizer}}
+\makeatother
+\RequirePackage{xstring}
+
+% compatibility with the old haskell-listings commands used on sheets and slides
+\makeatletter
+% the default colors of haskell-listings (the documents set keywordA-C themselves)
+\lstcolorlet{literals}{uulmaccent!90!brown}
+\lstcolorlet{numbers}{blue!70!black!80!teal}
+\lstcolorlet{comments}{lightgray!75!gray}
+\def\T{\texttt}
+\lstset{autogobble}
+% the old string delimiters (for strings spanning several inline snippets)
+\lstdefinelanguage{lSheetMHS}{
+   language=lMagicHaskell,
+   moredelim=[is][{\color{xlst@colors@lst@literals}}]{:':>}{<:':},
+   % from haskell-listings: grayed-out context lines and the emoji placeholder
+   moredelim=[il][{\color{lightgray}}]{go>},
+   add to literate={:Penguin:}{{{\emoji{penguin}}}}1
+}
+\xlstmintedmap{mhs}{lSheetMHS}
+\xlstmintedmap{haskell}{lSheetMHS}% keeps the ligatures haskell-listings had
+\newcommand\ihs[1][]{\bmhs[language=lSheetMHS,#1]}
+\def\hsblacklistlinenumbers{\xlstblacklistlinenumbers}
+\lstdefinelanguage{lSheetGHCi}{
+   language=lGHCi,
+   moredelim=[is][{}]{out->}{<-out},
+   moredelim=**[il][{{\Large\strut}}]{in>},
+   add to literate={ghci-Text.Regex.Posix>}{{{\mhs@nocopy{\mhsPrompt{ghci Text.Regex.Posix>}}}}}{22}
+}
+\xlstmintedmap{ghci}{lSheetGHCi}
+\lstdefinelanguage{lText}{
+   add to literate={:CRLF:}{{{\scriptsize\textcolor{lightgray}{\textbackslash r\textbackslash n}}}}3
+}
+\xlstmintedmap{text}{lText}
+\newcommand\itxt[1][]{\bmhs[language=lText,#1]}
+\colorlet{@rawtypecolor}{lightgray}
+\def\@typeShift#1{\raisebox{.75pt}{\T{\hbox{#1}}}}
+\robustify\@typeShift
+\def\TypeSubstitute#1{\StrSubstitute{#1}{||>}{{\@typeShift{|\kern-3.5pt|>}}}[\@tmp]\StrSubstitute{\@tmp}{|>}{{\@typeShift{|>}}}[\@tmp]\StrSubstitute{\@tmp}{->}{{\ensuremath{\rightarrow}}}[\@tmp]\StrSubstitute{\@tmp}{=>}{{\ensuremath{\Rightarrow}}}[\@tmp]}
+\robustify\TypeSubstitute
+\def\RawTypePrint#1{\textcolor{@rawtypecolor}{\TypeSubstitute{#1}\BeginAccSupp{ActualText={}}\footnotesize\textsf{\@tmp}\EndAccSupp{}}}
+% minted looks as with haskell-listings: plain (no frame, no line numbers), fixed columns,
+% '-- !*...*!' escapes; text blocks never get line numbers
+\xlstsetmintedstyle{plain}
+\lst@AddToHook{InitVars}{\lst@width.6em\relax}% haskell-listings used basewidth=.6em (magic-haskell: the glyph width)
+\apptocmd\xlst@minted@setup{\lstset{columns=fixed,lineskip=.33pt,escapeinside={--\ !*}{*!},keepspaces=false}\ifstrequal{#3}{text}{\lstset{numbers=none}}{}}{}{\PackageWarning{magic-compat}{Could not patch minted}}
+\colorlet{prompt@color}{gray}
+\def\HaskellPrompt#1{\textcolor{prompt@color}{#1}}
+\colorlet{haskell@escapecolor}{uulmaccent!70!black}
+\def\HaskellListingsEscape#1{\textcolor{haskell@escapecolor}{#1}}
+\def\mhsEscape{\HaskellListingsEscape}% slides restyle \HaskellListingsEscape
+\def\hsComment#1{{\xlstGetStyle{comments}#1}}
+\def\hsKw#1{{\xlstGetStyle{keywordA}#1}}
+\def\hsNum#1{{\xlstGetStyle{numbers}#1}}
+\def\MtlBase{https://hackage.haskell.org/package/mtl/docs}
+\def\ParsecBase{https://hackage.haskell.org/package/parsec/docs}
+\def\ArrayBase{https://hackage.haskell.org/package/array/docs}
+\def\ByteStringBase{https://hackage.haskell.org/package/bytestring/docs}
+\def\QuickCheckBase{https://hackage.haskell.org/package/QuickCheck/docs}
+\def\HspecBase{https://hackage.haskell.org/package/hspec/docs}
+\def\HspecExpBase{https://hackage.haskell.org/package/hspec-expectations/docs}
+\def\mhsPrompt{\HaskellPrompt}% slides locally redefine \HaskellPrompt to hide prompts
+\def\HsBase{https://hackage.haskell.org/package/base/docs}
+\def\blacklst{\appto\xlst@styles@lst@basic{\color{black}}}
+\AtBeginDocument{\colorlet{hs@colors@lst@keywordA}{xlst@colors@lst@keywordA}}% used by \Xlink in shared.tex
+\makeatother
+\catcode`\@=\magiccompatatcode % restore the catcode of the caller
